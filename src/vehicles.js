@@ -5,9 +5,12 @@
 // 2. 4 Controllable Emergency Responders with Flashing Sirens:
 //    - ENGINE 4 (Fire Engine), UNIT 101 (Police Cruiser),
 //      MEDIC 2 (Ambulance), CHIEF 1 (Battalion Chief SUV)
-// 3. Deterministic Seeded Civilian Traffic (School Bus, Delivery Vans,
-//    Taxis, Garbage Trucks, Commuters) driving in right-hand lanes
-// 4. Interactive Click-to-Select & Click-to-Dispatch with Tactical Route Lines
+// 3. True Right-Hand Lane Driving & Smooth Cornering:
+//    - Northbound -> East lane (+X)
+//    - Southbound -> West lane (-X)
+//    - Eastbound  -> South lane (+Y)
+//    - Westbound  -> North lane (-Y)
+// 4. Larger, High-Visibility 16-Bit Vehicle Sprites & Same-Lane Spacing
 // ========================================================
 
 const UNIT_STATUS = {
@@ -70,6 +73,20 @@ class VehicleManager {
         }
     }
 
+    // Align parked vehicle heading parallel to the road it sits on
+    getRoadAlignedHeading(col, row) {
+        const E = this.world.isRoadOrBridge(col + 1, row);
+        const W = this.world.isRoadOrBridge(col - 1, row);
+        const N = this.world.isRoadOrBridge(col, row - 1);
+        const S = this.world.isRoadOrBridge(col, row + 1);
+
+        if (E) return Math.PI / 2;   // East
+        if (S) return Math.PI;       // South
+        if (W) return -Math.PI / 2;  // West
+        if (N) return 0;             // North
+        return Math.PI / 2;
+    }
+
     // ========================================================
     // INITIALIZE RESPONDERS & SEEDED CIVILIAN TRAFFIC
     // ========================================================
@@ -87,7 +104,6 @@ class VehicleManager {
                     lot: lot
                 };
             }
-            // Fallback to a road node if station was not found
             const node = this.world.roadNodes[fallbackIndex % Math.max(1, this.world.roadNodes.length)] || { col: 1, row: 1 };
             return { col: node.col, row: node.row, lot: lot || null };
         };
@@ -95,6 +111,17 @@ class VehicleManager {
         const fireSpawn = findStationRoad(LOT_TYPE.STATION_FIRE, 0);
         const policeSpawn = findStationRoad(LOT_TYPE.STATION_POLICE, 5);
         const hospitalSpawn = findStationRoad(LOT_TYPE.STATION_HOSPITAL, 10);
+
+        // Place Chief 1 on an adjacent road tile next to Fire HQ so it doesn't overlap Engine 4
+        let chiefSpawn = { col: fireSpawn.col, row: fireSpawn.row, lot: fireSpawn.lot };
+        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nc = fireSpawn.col + dc;
+            const nr = fireSpawn.row + dr;
+            if (this.world.isRoadOrBridge(nc, nr)) {
+                chiefSpawn = { col: nc, row: nr, lot: fireSpawn.lot };
+                break;
+            }
+        }
 
         const defs = [
             {
@@ -135,11 +162,12 @@ class VehicleManager {
                 spriteBase: 'responder_chief_suv',
                 color: '#f59e0b',
                 speedTilesPerSec: 3.5,
-                spawn: fireSpawn
+                spawn: chiefSpawn
             }
         ];
 
         defs.forEach((d, idx) => {
+            const initialHeading = this.getRoadAlignedHeading(d.spawn.col, d.spawn.row);
             this.responders.push({
                 id: d.id,
                 callsign: d.callsign,
@@ -158,17 +186,15 @@ class VehicleManager {
                 targetLot: null,
                 targetCol: d.spawn.col,
                 targetRow: d.spawn.row,
-                headingRad: 0,
+                headingRad: initialHeading,
                 status: UNIT_STATUS.IDLE_AT_BASE,
                 sirenActive: false,
                 unitIndex: idx
             });
         });
 
-        // Default select Engine 4 so the player can immediately click anywhere to test dispatch
         this.selectedUnit = this.responders[0];
 
-        // Spawn 12 deterministic civilian vehicles across the road network
         this.spawnCivilianTraffic();
         this.syncHUD();
     }
@@ -177,18 +203,18 @@ class VehicleManager {
         if (this.world.roadNodes.length < 4) return;
 
         const civPool = [
-            { sprite: 'car_school_bus', name: 'School Bus #12', speed: 1.4, prefLot: LOT_TYPE.CIVIC_SCHOOL },
-            { sprite: 'car_van_delivery', name: 'FreshGrocer Delivery Van', speed: 1.6, prefLot: LOT_TYPE.COMMERCIAL_SUPERMARKET },
+            { sprite: 'car_school_bus', name: 'School Bus #12', speed: 1.35, prefLot: LOT_TYPE.CIVIC_SCHOOL },
+            { sprite: 'car_van_delivery', name: 'FreshGrocer Delivery Van', speed: 1.55, prefLot: LOT_TYPE.COMMERCIAL_SUPERMARKET },
             { sprite: 'car_garbage_truck', name: 'Municipal Sanitation Truck', speed: 1.2, prefLot: null },
-            { sprite: 'car_taxi_yellow', name: 'Metro Cab #44', speed: 2.1, prefLot: LOT_TYPE.COMMERCIAL_BANK },
-            { sprite: 'car_sedan_blue', name: 'Civilian Sedan', speed: 1.9, prefLot: null },
-            { sprite: 'car_sedan_red', name: 'Civilian Sedan', speed: 2.0, prefLot: null },
-            { sprite: 'car_sedan_silver', name: 'Commuter Sedan', speed: 1.8, prefLot: null },
-            { sprite: 'car_pickup_white', name: 'Utility Pickup', speed: 1.8, prefLot: LOT_TYPE.INDUSTRIAL_WAREHOUSE },
-            { sprite: 'car_suv_dark', name: 'Suburban SUV', speed: 1.9, prefLot: null },
-            { sprite: 'car_sports_coupe', name: 'Sports Coupe', speed: 2.3, prefLot: null },
-            { sprite: 'car_compact_green', name: 'Compact Hatchback', speed: 1.7, prefLot: null },
-            { sprite: 'car_compact_orange', name: 'Compact Coupe', speed: 1.8, prefLot: null },
+            { sprite: 'car_taxi_yellow', name: 'Metro Cab #44', speed: 2.0, prefLot: LOT_TYPE.COMMERCIAL_BANK },
+            { sprite: 'car_sedan_blue', name: 'Civilian Sedan', speed: 1.8, prefLot: null },
+            { sprite: 'car_sedan_red', name: 'Civilian Sedan', speed: 1.9, prefLot: null },
+            { sprite: 'car_sedan_silver', name: 'Commuter Sedan', speed: 1.75, prefLot: null },
+            { sprite: 'car_pickup_white', name: 'Utility Pickup', speed: 1.7, prefLot: LOT_TYPE.INDUSTRIAL_WAREHOUSE },
+            { sprite: 'car_suv_dark', name: 'Suburban SUV', speed: 1.85, prefLot: null },
+            { sprite: 'car_sports_coupe', name: 'Sports Coupe', speed: 2.15, prefLot: null },
+            { sprite: 'car_compact_green', name: 'Compact Hatchback', speed: 1.65, prefLot: null },
+            { sprite: 'car_compact_orange', name: 'Compact Coupe', speed: 1.75, prefLot: null },
             { sprite: 'car_station_wagon', name: 'Family Wagon', speed: 1.6, prefLot: null }
         ];
 
@@ -209,7 +235,7 @@ class VehicleManager {
                 row: startNode.row,
                 progress: 0,
                 path: [],
-                headingRad: 0,
+                headingRad: this.getRoadAlignedHeading(startNode.col, startNode.row),
                 pauseTimer: 0
             };
             this.assignNextCivilianRoute(civ);
@@ -221,7 +247,6 @@ class VehicleManager {
         if (this.world.roadNodes.length < 2) return;
         let destNode = null;
 
-        // 40% chance to drive toward preferred commercial/school lot if applicable
         if (civ.prefLot && this.prng.random() < 0.45) {
             const lot = this.world.lots.find(l => l.type === civ.prefLot);
             if (lot && lot.facingRoad) {
@@ -296,7 +321,6 @@ class VehicleManager {
                 const neighborKey = `${nc},${nr}`;
                 if (closedSet.has(neighborKey)) continue;
 
-                // Slight congestion penalty if civilian vehicles occupy that road cell
                 let stepCost = 1.0;
                 if (this.hasCivilianOnCell(nc, nr)) {
                     stepCost += 0.35;
@@ -367,7 +391,6 @@ class VehicleManager {
     }
 
     dispatchUnit(unit, destCol, destRow, targetLot = null, isReturn = false) {
-        // Start from current tile (or next tile if already mid-step)
         const startC = unit.col;
         const startR = unit.row;
         const path = this.findPath(startC, startR, destCol, destRow);
@@ -402,10 +425,10 @@ class VehicleManager {
         const dc = c2 - c1;
         const dr = r2 - r1;
         // Sprites are drawn facing North (UP = 0 rad)
-        if (dr < 0) vehicle.headingRad = 0;               // North
-        else if (dc > 0) vehicle.headingRad = Math.PI / 2; // East
-        else if (dr > 0) vehicle.headingRad = Math.PI;     // South
-        else if (dc < 0) vehicle.headingRad = -Math.PI / 2;// West
+        if (dr < 0) vehicle.headingRad = 0;               // North (UP)
+        else if (dc > 0) vehicle.headingRad = Math.PI / 2; // East  (RIGHT)
+        else if (dr > 0) vehicle.headingRad = Math.PI;     // South (DOWN)
+        else if (dc < 0) vehicle.headingRad = -Math.PI / 2;// West  (LEFT)
     }
 
     // ========================================================
@@ -421,8 +444,7 @@ class VehicleManager {
                 const nextStep = unit.path[0];
                 this.updateHeadingFromStep(unit, unit.col, unit.row, nextStep.col, nextStep.row);
 
-                // Slight slowdown if driving through heavy civilian traffic
-                const trafficFactor = this.hasCivilianOnCell(unit.col, unit.row) ? 0.8 : 1.0;
+                const trafficFactor = this.hasCivilianOnCell(unit.col, unit.row) ? 0.82 : 1.0;
                 unit.progress += unit.speedTilesPerSec * trafficFactor * dt;
 
                 while (unit.progress >= 1.0 && unit.path.length > 0) {
@@ -452,7 +474,7 @@ class VehicleManager {
             }
         }
 
-        // 2. Update Seeded Civilian Traffic
+        // 2. Update Seeded Civilian Traffic (with same-lane spacing so cars don't stack)
         for (const civ of this.civilians) {
             if (civ.pauseTimer > 0) {
                 civ.pauseTimer -= dt;
@@ -462,7 +484,17 @@ class VehicleManager {
             if (civ.path && civ.path.length > 0) {
                 const nextStep = civ.path[0];
                 this.updateHeadingFromStep(civ, civ.col, civ.row, nextStep.col, nextStep.row);
-                civ.progress += civ.speedTilesPerSec * dt;
+
+                // Check if another civilian is directly ahead in the same lane
+                const blockedAhead = this.civilians.some(other =>
+                    other !== civ &&
+                    Math.abs(other.headingRad - civ.headingRad) < 0.1 &&
+                    ((other.col === civ.col && other.row === civ.row && other.progress > civ.progress && other.progress - civ.progress < 0.65) ||
+                     (other.col === nextStep.col && other.row === nextStep.row && (1.0 - civ.progress) + other.progress < 0.65))
+                );
+
+                const speedMult = blockedAhead ? 0.25 : 1.0;
+                civ.progress += civ.speedTilesPerSec * speedMult * dt;
 
                 while (civ.progress >= 1.0 && civ.path.length > 0) {
                     civ.progress -= 1.0;
@@ -484,7 +516,18 @@ class VehicleManager {
         }
     }
 
-    // Compute exact pixel coordinates with right-hand lane offset
+    // ========================================================
+    // TRUE RIGHT-HAND LANE POSITIONING
+    // ========================================================
+    // Since headingRad = 0 is North (0, -1), the 90-degree clockwise (Right-Hand)
+    // unit normal vector in screen coordinates (+X East, +Y South) is:
+    //   rightX = Math.cos(headingRad)
+    //   rightY = Math.sin(headingRad)
+    // Verify:
+    //   North (0):        (+1,  0) -> East side of road!
+    //   East  (+PI/2):    ( 0, +1) -> South side of road!
+    //   South (PI):       (-1,  0) -> West side of road!
+    //   West  (-PI/2):    ( 0, -1) -> North side of road!
     getVehicleWorldXY(v, isResponder = false) {
         const s = this.world.cellSize;
         let currC = v.col;
@@ -499,17 +542,20 @@ class VehicleManager {
         const centerX = this.world.offsetX + currC * s + s / 2;
         const centerY = this.world.offsetY + currR * s + s / 2;
 
-        // Right-hand lane offset based on heading
-        const laneOffset = s * (isResponder ? 0.16 : 0.21);
-        const rightAngle = v.headingRad + Math.PI / 2;
-        const x = centerX + Math.cos(rightAngle) * laneOffset;
-        const y = centerY + Math.sin(rightAngle) * laneOffset;
+        // 0.23 * cellSize places the vehicle squarely in the center of the right-hand lane
+        // (between the yellow center line at 0.0 and the curb at 0.46 * s)
+        const laneOffset = s * (isResponder ? 0.22 : 0.24);
+        const rightX = Math.cos(v.headingRad);
+        const rightY = Math.sin(v.headingRad);
 
-        return { x, y, centerX, centerY };
+        const x = centerX + rightX * laneOffset;
+        const y = centerY + rightY * laneOffset;
+
+        return { x, y, centerX, centerY, rightX, rightY, laneOffset };
     }
 
     getResponderAtPixel(px, py) {
-        const hitRadius = this.world.cellSize * 0.45;
+        const hitRadius = this.world.cellSize * 0.48;
         for (const unit of this.responders) {
             const pos = this.getVehicleWorldXY(unit, true);
             const dist = Math.hypot(px - pos.x, py - pos.y);
@@ -539,11 +585,17 @@ class VehicleManager {
 
                 const startPos = this.getVehicleWorldXY(unit, true);
                 ctx.beginPath();
-                ctx.moveTo(startPos.centerX, startPos.centerY);
+                ctx.moveTo(startPos.x, startPos.y);
 
-                for (const step of unit.path) {
-                    const sx = this.world.offsetX + step.col * s + s / 2;
-                    const sy = this.world.offsetY + step.row * s + s / 2;
+                for (let i = 0; i < unit.path.length; i++) {
+                    const step = unit.path[i];
+                    const prev = i === 0 ? { col: unit.col, row: unit.row } : unit.path[i - 1];
+                    const dc = step.col - prev.col;
+                    const dr = step.row - prev.row;
+                    // Right-hand offset vector for segment (dc, dr) is (-dr, dc)
+                    const segOffset = s * 0.22;
+                    const sx = this.world.offsetX + step.col * s + s / 2 + (-dr) * segOffset;
+                    const sy = this.world.offsetY + step.row * s + s / 2 + (dc) * segOffset;
                     ctx.lineTo(sx, sy);
                 }
                 ctx.stroke();
@@ -569,8 +621,8 @@ class VehicleManager {
             }
         }
 
-        // 2. Render Civilian Vehicles
-        const civDrawSize = Math.floor(s * 0.62);
+        // 2. Render Civilian Vehicles (Scaled up to 1.05 * cellSize so car bodies fill the lane cleanly)
+        const civDrawSize = Math.floor(s * 1.05);
         for (const civ of this.civilians) {
             const pos = this.getVehicleWorldXY(civ, false);
             const sprite = this.sprites[civ.spriteKey];
@@ -582,21 +634,15 @@ class VehicleManager {
                 ctx.drawImage(sprite, -civDrawSize / 2, -civDrawSize / 2, civDrawSize, civDrawSize);
             } else {
                 ctx.fillStyle = '#94a3b8';
-                ctx.fillRect(-5, -8, 10, 16);
+                ctx.fillRect(-6, -10, 12, 20);
             }
             ctx.restore();
         }
 
-        // 3. Render Emergency Responder Units
-        const respDrawSize = Math.floor(s * 0.78);
+        // 3. Render Emergency Responder Units (Scaled up to 1.24 * cellSize for commanding presence)
+        const respDrawSize = Math.floor(s * 1.24);
         for (const unit of this.responders) {
-            // Slight stagger when two units are parked at the same station
-            let pos = this.getVehicleWorldXY(unit, true);
-            if (unit.id === 'unit_chief' && unit.path.length === 0 &&
-                unit.col === this.responders[0].col && unit.row === this.responders[0].row) {
-                pos.x -= s * 0.24;
-            }
-
+            const pos = this.getVehicleWorldXY(unit, true);
             const isSelected = this.selectedUnit && this.selectedUnit.id === unit.id;
 
             // Selection ring under selected responder
@@ -605,10 +651,10 @@ class VehicleManager {
                 ctx.strokeStyle = unit.color;
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.arc(pos.x, pos.y, Math.floor(s * 0.34), 0, Math.PI * 2);
+                ctx.arc(pos.x, pos.y, Math.floor(s * 0.36), 0, Math.PI * 2);
                 ctx.stroke();
                 ctx.fillStyle = unit.color;
-                ctx.globalAlpha = 0.18;
+                ctx.globalAlpha = 0.22;
                 ctx.fill();
                 ctx.restore();
             }
@@ -625,12 +671,12 @@ class VehicleManager {
                 ctx.drawImage(sprite, -respDrawSize / 2, -respDrawSize / 2, respDrawSize, respDrawSize);
             } else {
                 ctx.fillStyle = unit.color;
-                ctx.fillRect(-6, -10, 12, 20);
+                ctx.fillRect(-7, -12, 14, 24);
             }
             ctx.restore();
 
             // Floating Callsign Tag above responder
-            this.renderUnitCallsign(ctx, pos.x, pos.y - Math.floor(s * 0.34), unit, isSelected);
+            this.renderUnitCallsign(ctx, pos.x, pos.y - Math.floor(s * 0.36), unit, isSelected);
         }
     }
 
