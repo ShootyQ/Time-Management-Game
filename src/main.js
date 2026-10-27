@@ -169,11 +169,13 @@ class GameApp {
         this.menuScreen.classList.add('hidden');
         this.gameScreen.classList.remove('hidden');
 
-        // Dynamically resize canvas to fill the full viewport container
-        if (this.world) {
-            this.world.resize();
-            this.world.generate(this.districtSeed);
-        }
+        // Allow DOM to layout the container before calculating full-screen canvas dimensions
+        requestAnimationFrame(() => {
+            if (this.world) {
+                this.world.resize();
+                this.world.generate(this.districtSeed);
+            }
+        });
 
         this.inGameSeconds = 8 * 3600; // Reset to 8:00 AM
         this.isPaused = false;

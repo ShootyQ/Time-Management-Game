@@ -421,6 +421,13 @@ input:checked + .slider:before {
 /* ========================================================
    GAME PLAY SCREEN (HUD & Canvas Placeholder)
    ======================================================== */
+#game-screen {
+    padding: 0 !important;
+    width: 100vw;
+    height: calc(100vh - 35px);
+    overflow: hidden;
+}
+
 .game-layout {
     display: flex;
     flex-direction: column;
