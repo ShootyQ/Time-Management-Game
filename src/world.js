@@ -60,6 +60,7 @@ class World {
 
         this.hoveredCell = null;
         this.selectedLot = null;
+        this.simTime = 0;
 
         this.images = {};
         this.loadAssets();
@@ -1344,6 +1345,23 @@ class World {
         ctx.beginPath(); ctx.arc(x + (s * 2) / 3 - 2, y + (s * 2) / 3 - 2, s / 7, 0, Math.PI * 2); ctx.fill();
     }
 
+    getTrafficLightState(c, r) {
+        // Deterministic 14-second cycle with per-intersection phase offset
+        const cycle = 14.0;
+        const offset = (c * 3.7 + r * 5.3) % cycle;
+        const t = (this.simTime + offset) % cycle;
+
+        if (t < 5.5) {
+            return { NS: 'GREEN', EW: 'RED' };
+        } else if (t < 7.0) {
+            return { NS: 'YELLOW', EW: 'RED' };
+        } else if (t < 12.5) {
+            return { NS: 'RED', EW: 'GREEN' };
+        } else {
+            return { NS: 'RED', EW: 'YELLOW' };
+        }
+    }
+
     renderRoadTile(c, r, roadType) {
         const ctx = this.ctx;
         const x = this.offsetX + c * this.cellSize;
@@ -1404,9 +1422,40 @@ class World {
                 ctx.fillRect(x + 3, y + i, 5, step - 2);
                 ctx.fillRect(x + s - 8, y + i, 5, step - 2);
             }
+
+            // Live 4-Way Traffic Signal Lights on corners
+            const tl = this.getTrafficLightState(c, r);
+            const colorMap = {
+                GREEN: '#22c55e',
+                YELLOW: '#facc15',
+                RED: '#ef4444'
+            };
+            const nsColor = colorMap[tl.NS];
+            const ewColor = colorMap[tl.EW];
+
+            // Draw dark signal housings & glowing LEDs for N/S (top-right & bottom-left) and E/W (top-left & bottom-right)
+            this.renderSignalLamp(ctx, x + s - 7, y + 5, nsColor);
+            this.renderSignalLamp(ctx, x + 7, y + s - 5, nsColor);
+            this.renderSignalLamp(ctx, x + 5, y + 7, ewColor);
+            this.renderSignalLamp(ctx, x + s - 5, y + s - 7, ewColor);
+
         } else if (roadType && roadType.startsWith('3WAY')) {
             ctx.fillStyle = '#facc15';
             ctx.beginPath(); ctx.arc(x + half, y + half, 3, 0, Math.PI * 2); ctx.fill();
+
+            // White stop line & Red Octagonal STOP signs on T-junction approaches
+            ctx.fillStyle = '#f8fafc';
+            if (roadType !== '3WAY_S') ctx.fillRect(x + half + 2, y + 3, half - 5, 3);     // Northbound stop bar
+            if (roadType !== '3WAY_N') ctx.fillRect(x + 3, y + s - 6, half - 5, 3);        // Southbound stop bar
+            if (roadType !== '3WAY_E') ctx.fillRect(x + 3, y + half + 2, 3, half - 5);     // Westbound stop bar
+            if (roadType !== '3WAY_W') ctx.fillRect(x + s - 6, y + 3, 3, half - 5);        // Eastbound stop bar
+
+            // Octagonal STOP sign on the stem corner of the T-junction
+            if (roadType === '3WAY_S') this.renderStopSign(ctx, x + s - 6, y + s - 6);
+            else if (roadType === '3WAY_N') this.renderStopSign(ctx, x + 6, y + 6);
+            else if (roadType === '3WAY_E') this.renderStopSign(ctx, x + s - 6, y + 6);
+            else if (roadType === '3WAY_W') this.renderStopSign(ctx, x + 6, y + s - 6);
+
         } else if (roadType && roadType.startsWith('CUL_DE_SAC')) {
             ctx.fillStyle = '#3f3f46';
             ctx.beginPath(); ctx.arc(x + half, y + half, Math.floor(s * 0.32), 0, Math.PI * 2); ctx.fill();
@@ -1414,6 +1463,42 @@ class World {
             ctx.lineWidth = 2;
             ctx.beginPath(); ctx.arc(x + half, y + half, Math.floor(s * 0.14), 0, Math.PI * 2); ctx.stroke();
         }
+    }
+
+    renderSignalLamp(ctx, lx, ly, color) {
+        ctx.save();
+        ctx.fillStyle = '#090d16';
+        ctx.beginPath();
+        ctx.arc(lx, ly, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    renderStopSign(ctx, sx, sy) {
+        ctx.save();
+        ctx.fillStyle = '#ef4444';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        const r = 4.2;
+        for (let i = 0; i < 8; i++) {
+            const angle = (i * Math.PI) / 4 + Math.PI / 8;
+            const px = sx + Math.cos(angle) * r;
+            const py = sy + Math.sin(angle) * r;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
     }
 
     renderLot(lot) {

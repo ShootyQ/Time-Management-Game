@@ -82,6 +82,25 @@ class SoundManager {
         osc.start();
         osc.stop(this.ctx.currentTime + 0.32);
     }
+
+    playCrash() {
+        if (this.muted || !this.sfxEnabled) return;
+        this.init();
+        if (!this.ctx) return;
+
+        // Low impact crunch + metal screech
+        this.playTone(140, 'sawtooth', 0.28, 45);
+        setTimeout(() => this.playTone(320, 'square', 0.18, 90), 40);
+    }
+
+    playResolved() {
+        if (this.muted || !this.sfxEnabled) return;
+        this.init();
+        if (!this.ctx) return;
+
+        this.playTone(523.25, 'triangle', 0.1, 659.25);
+        setTimeout(() => this.playTone(659.25, 'triangle', 0.16, 783.99), 90);
+    }
 }
 
 window.soundManager = new SoundManager();
