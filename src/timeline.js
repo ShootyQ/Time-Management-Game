@@ -95,8 +95,10 @@ class TimelineManager {
         const warehouse = findLot(LOT_TYPE.INDUSTRIAL_WAREHOUSE) || pickHouse(4);
         const gas = findLot(LOT_TYPE.COMMERCIAL_GAS) || pickHouse(5);
         const houseA = pickHouse(this.prng.range(0, Math.max(1, houses.length - 1)));
-        const houseB = pickHouse(this.prng.range(0, Math.max(1, houses.length - 1)) + 3);
-        const houseC = pickHouse(this.prng.range(0, Math.max(1, houses.length - 1)) + 6);
+        const houseB = pickHouse(this.prng.range(0, Math.max(1, houses.length - 1)) + 2);
+        const houseC = pickHouse(this.prng.range(0, Math.max(1, houses.length - 1)) + 5);
+        const houseD = pickHouse(this.prng.range(0, Math.max(1, houses.length - 1)) + 8);
+        const houseE = pickHouse(this.prng.range(0, Math.max(1, houses.length - 1)) + 11);
 
         const intersections = this.world.roadNodes.filter(n => {
             const rt = this.world.grid[n.row][n.col].roadType;
@@ -109,12 +111,12 @@ class TimelineManager {
             ? intersections[(this.prng.range(0, intersections.length - 1) + 1) % intersections.length]
             : crashNode;
 
-        // 9 Seeded Emergencies across 08:00 - 09:00 AM
-        // Notice: Moving an early event forward can easily collide with a hidden later event of the same unit!
+        // 13 High-Pace Seeded Emergencies across 08:00 - 09:00 AM (1 in-game min = 3 real seconds!)
+        // First emergency erupts at 08:01 AM (only 3 real seconds into the shift!)
         const rawDefs = [
             {
                 id: 'inc_1',
-                minuteOffset: 4,
+                minuteOffset: 1,
                 title: 'House Kitchen Fire',
                 icon: '🔥',
                 fxType: 'FIRE',
@@ -123,39 +125,53 @@ class TimelineManager {
                 reqLabel: 'ENGINE 4 [1]',
                 lot: houseA,
                 immovable: false,
-                durationSec: 46,
+                durationSec: 26,
                 damagePenalty: 3500
             },
             {
                 id: 'inc_2',
-                minuteOffset: 9,
-                title: 'Diner Fryer Blaze',
+                minuteOffset: 4,
+                title: 'Diner Hold-Up',
+                icon: '🚓',
+                fxType: 'POLICE',
+                color: '#3b82f6',
+                reqUnit: 'unit_police',
+                reqLabel: 'UNIT 101 [2]',
+                lot: diner,
+                immovable: false,
+                durationSec: 26,
+                damagePenalty: 3000
+            },
+            {
+                id: 'inc_3',
+                minuteOffset: 7,
+                title: 'Attic Electrical Blaze',
                 icon: '🔥',
                 fxType: 'FIRE',
                 color: '#ef4444',
                 reqUnit: 'unit_fire',
                 reqLabel: 'ENGINE 4 [1]',
-                lot: diner,
+                lot: houseC,
                 immovable: false,
-                durationSec: 48,
+                durationSec: 26,
                 damagePenalty: 4000,
                 dominoSpec: {
                     id: 'dom_1',
-                    delayMinutes: 4,
+                    delayMinutes: 3,
                     title: 'Grid Blackout Fire',
                     icon: '⚡',
                     fxType: 'FIRE',
                     color: '#ef4444',
                     reqUnit: 'unit_fire',
                     reqLabel: 'ENGINE 4 [1]',
-                    lot: houseC,
-                    durationSec: 45,
+                    lot: houseD,
+                    durationSec: 25,
                     damagePenalty: 4500
                 }
             },
             {
-                id: 'inc_3',
-                minuteOffset: 15,
+                id: 'inc_4',
+                minuteOffset: 11,
                 title: 'Cardiac Emergency',
                 icon: '🚑',
                 fxType: 'MEDICAL',
@@ -164,12 +180,26 @@ class TimelineManager {
                 reqLabel: 'MEDIC 2 [3]',
                 lot: houseB,
                 immovable: false,
-                durationSec: 52,
+                durationSec: 28,
                 damagePenalty: 2500,
                 requiresErTransport: true
             },
             {
-                id: 'inc_4',
+                id: 'inc_5',
+                minuteOffset: 16,
+                title: 'Diner Fryer Inferno',
+                icon: '🔥',
+                fxType: 'FIRE',
+                color: '#ef4444',
+                reqUnit: 'unit_fire',
+                reqLabel: 'ENGINE 4 [1]',
+                lot: diner,
+                immovable: false,
+                durationSec: 26,
+                damagePenalty: 3800
+            },
+            {
+                id: 'inc_6',
                 minuteOffset: 21,
                 title: 'School Bell Surge',
                 icon: '🏫',
@@ -180,12 +210,12 @@ class TimelineManager {
                 lot: school,
                 immovable: true, // Fixed public schedule — always known!
                 alwaysKnown: true,
-                durationSec: 46,
+                durationSec: 26,
                 damagePenalty: 2000
             },
             {
-                id: 'inc_5',
-                minuteOffset: 26,
+                id: 'inc_7',
+                minuteOffset: 25,
                 title: 'Armed Bank Heist',
                 icon: '🚓',
                 fxType: 'POLICE',
@@ -194,11 +224,11 @@ class TimelineManager {
                 reqLabel: 'UNIT 101 [2]',
                 lot: bank,
                 immovable: false,
-                durationSec: 48,
+                durationSec: 26,
                 damagePenalty: 5000,
                 dominoSpec: {
                     id: 'dom_2',
-                    delayMinutes: 4,
+                    delayMinutes: 3,
                     title: 'Getaway Chase Wreck',
                     icon: '💥',
                     fxType: 'POLICE',
@@ -208,13 +238,13 @@ class TimelineManager {
                     lot: null,
                     roadCol: dominoCrashNode.col,
                     roadRow: dominoCrashNode.row,
-                    durationSec: 50,
+                    durationSec: 28,
                     damagePenalty: 4000
                 }
             },
             {
-                id: 'inc_6',
-                minuteOffset: 33,
+                id: 'inc_8',
+                minuteOffset: 30,
                 title: 'Collapse at Market',
                 icon: '🚑',
                 fxType: 'MEDICAL',
@@ -223,13 +253,13 @@ class TimelineManager {
                 reqLabel: 'MEDIC 2 [3]',
                 lot: supermarket,
                 immovable: false,
-                durationSec: 50,
+                durationSec: 28,
                 damagePenalty: 3000,
                 requiresErTransport: true
             },
             {
-                id: 'inc_7',
-                minuteOffset: 39,
+                id: 'inc_9',
+                minuteOffset: 35,
                 title: 'Intersection Pileup',
                 icon: '💥',
                 fxType: 'CRASH',
@@ -240,11 +270,25 @@ class TimelineManager {
                 roadCol: crashNode.col,
                 roadRow: crashNode.row,
                 immovable: false,
-                durationSec: 52,
+                durationSec: 28,
                 damagePenalty: 2500
             },
             {
-                id: 'inc_8',
+                id: 'inc_10',
+                minuteOffset: 40,
+                title: 'Garage Roof Blaze',
+                icon: '🔥',
+                fxType: 'FIRE',
+                color: '#ef4444',
+                reqUnit: 'unit_fire',
+                reqLabel: 'ENGINE 4 [1]',
+                lot: houseE,
+                immovable: false,
+                durationSec: 26,
+                damagePenalty: 3500
+            },
+            {
+                id: 'inc_11',
                 minuteOffset: 45,
                 title: 'Chemical Drum Leak',
                 icon: '⚠️',
@@ -254,11 +298,11 @@ class TimelineManager {
                 reqLabel: 'CHIEF 1 [4]',
                 lot: warehouse,
                 immovable: false,
-                durationSec: 48,
+                durationSec: 26,
                 damagePenalty: 4500,
                 dominoSpec: {
                     id: 'dom_3',
-                    delayMinutes: 4,
+                    delayMinutes: 3,
                     title: 'Hazmat Vapor Blaze',
                     icon: '☣️',
                     fxType: 'FIRE',
@@ -266,13 +310,13 @@ class TimelineManager {
                     reqUnit: 'unit_fire',
                     reqLabel: 'ENGINE 4 [1]',
                     lot: supermarket,
-                    durationSec: 45,
+                    durationSec: 26,
                     damagePenalty: 5500
                 }
             },
             {
-                id: 'inc_9',
-                minuteOffset: 51,
+                id: 'inc_12',
+                minuteOffset: 50,
                 title: 'Fuel Pump Inferno',
                 icon: '🔥',
                 fxType: 'FIRE',
@@ -281,8 +325,23 @@ class TimelineManager {
                 reqLabel: 'ENGINE 4 [1]',
                 lot: gas,
                 immovable: false,
-                durationSec: 46,
+                durationSec: 26,
                 damagePenalty: 6000
+            },
+            {
+                id: 'inc_13',
+                minuteOffset: 54,
+                title: 'Critical Trauma Call',
+                icon: '🚑',
+                fxType: 'MEDICAL',
+                color: '#10b981',
+                reqUnit: 'unit_medic',
+                reqLabel: 'MEDIC 2 [3]',
+                lot: houseD,
+                immovable: false,
+                durationSec: 26,
+                damagePenalty: 3500,
+                requiresErTransport: true
             }
         ];
 

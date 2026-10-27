@@ -160,7 +160,7 @@ class VehicleManager {
                 hotkey: '1',
                 spriteBase: 'responder_fire_engine',
                 color: '#ef4444',
-                speedTilesPerSec: 2.7,
+                speedTilesPerSec: 3.4,
                 spawn: fireSpawn
             },
             {
@@ -170,7 +170,7 @@ class VehicleManager {
                 hotkey: '2',
                 spriteBase: 'responder_police_cruiser',
                 color: '#3b82f6',
-                speedTilesPerSec: 3.7,
+                speedTilesPerSec: 4.3,
                 spawn: policeSpawn
             },
             {
@@ -180,7 +180,7 @@ class VehicleManager {
                 hotkey: '3',
                 spriteBase: 'responder_ambulance',
                 color: '#10b981',
-                speedTilesPerSec: 3.2,
+                speedTilesPerSec: 3.8,
                 spawn: hospitalSpawn
             },
             {
@@ -190,7 +190,7 @@ class VehicleManager {
                 hotkey: '4',
                 spriteBase: 'responder_chief_suv',
                 color: '#f59e0b',
-                speedTilesPerSec: 3.6,
+                speedTilesPerSec: 4.1,
                 spawn: fireSpawn
             },
             {
@@ -200,7 +200,7 @@ class VehicleManager {
                 hotkey: '5',
                 spriteBase: 'responder_tow_truck',
                 color: '#f97316',
-                speedTilesPerSec: 2.9,
+                speedTilesPerSec: 3.5,
                 spawn: towSpawn
             }
         ];

@@ -256,7 +256,7 @@ class GameApp {
                 window.soundManager.playClick();
                 if (this.currentState === STATE.PLAYING) {
                     if (this.clockTimer) clearInterval(this.clockTimer);
-                    this.clockTimer = setInterval(() => this.tick(), 1000 / this.simSpeed);
+                    this.clockTimer = setInterval(() => this.tick(), 200 / this.simSpeed);
                 }
             });
         }
@@ -315,9 +315,9 @@ class GameApp {
         this.hudTokens.textContent = `${this.nudgeTokens}/3`;
         this.updateClockDisplay();
 
-        // Start clock tick loop
+        // Start clock tick loop (200ms per tick = 20 in-game seconds per real second, so 1 in-game min = 3 real seconds!)
         if (this.clockTimer) clearInterval(this.clockTimer);
-        this.clockTimer = setInterval(() => this.tick(), 1000 / this.simSpeed);
+        this.clockTimer = setInterval(() => this.tick(), 200 / this.simSpeed);
     }
 
     exitToMenu() {
