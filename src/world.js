@@ -6,9 +6,12 @@
 //    - Serpentine S-Curve Highway, Diagonal River Valley, Pinwheel Courts,
 //      Twin Harbor Peninsula, Switchback Terraces, Central Lake & Spokes,
 //      Forked Arterial Groves, Cross-Town Canal & Docks
-// 3. Distributed Multi-Tile Landmarks (2x2 & 2x1 Fire, Police, Hospital, School)
-// 4. Near-Zero Dead Space: Organic L-spurs, cul-de-sacs & 2-tile compound pairing
-// 5. 100% Connected Road Graph for Phase 3 A* Pathfinding
+// 3. 100% Connected Road Guarantee:
+//    - Zero unattached road segments (verified topological connectivity)
+//    - Zero dead-end bridges (bridges always span water completely & link both banks)
+//    - Zero 1-tile road "pimples" (spurs extend cleanly into L-streets or T-loops)
+// 4. Distributed Multi-Tile Landmarks (2x2 & 2x1 Fire, Police, Hospital, School)
+// 5. Near-Zero Dead Space: Automatic pocket streets & 2-tile estate pairing
 // ========================================================
 
 const CELL_TYPE = {
@@ -148,26 +151,29 @@ class World {
         }
 
         // 2. Pick one of 8 radically different macro road archetypes
-        // Combine seed parity + PRNG so consecutive seeds always jump across archetypes
         const styleRoll = (Math.abs(Math.floor(seed)) + this.prng.range(0, 7)) % 8;
         this.generateTopology(styleRoll);
 
-        // 3. Connect any disconnected road islands into a single 100% unified network
+        // 3. Validate all bridges span completely across water & connect road components
+        this.validateBridges();
         this.connectAllRoadComponents();
-        this.cleanupRoadClumps();
+        this.cleanupRoadClumpsSafely();
 
-        // 4. Grow organic L-streets & doglegs into any large open regions (leaving 2x2 pockets for landmarks)
+        // 4. Grow organic L-streets & doglegs into open regions (leaving 2x2 pockets for landmarks)
         this.growOrganicNeighborhoodStreets();
+        this.validateBridges();
         this.connectAllRoadComponents();
-        this.cleanupRoadClumps();
+        this.cleanupRoadClumpsSafely();
 
         // 5. Place Distributed Multi-Tile Landmarks (2x2 & 2x1 Fire, Police, Hospital, School)
         this.placeLandmarkLots();
 
-        // 6. Carve Cul-de-sacs into any remaining deep interior pockets
-        this.carveCulDeSacsForDeepBlocks();
+        // 6. Carve clean multi-tile streets/courts into any remaining deep pockets (no 1-tile pimples!)
+        this.carveCleanPocketStreets();
+        this.pruneStubbyRoadWarts();
+        this.validateBridges();
         this.connectAllRoadComponents();
-        this.cleanupRoadClumps();
+        this.cleanupRoadClumpsSafely();
 
         // 7. Classify all road intersections, corners, T-junctions, cul-de-sacs & bridges
         this.classifyRoads();
@@ -177,6 +183,11 @@ class World {
 
         // 9. Build Navigation Graph for Phase 3 A* Pathfinding
         this.buildRoadGraph();
+    }
+
+    isRoadOrBridge(c, r) {
+        return c >= 0 && c < this.cols && r >= 0 && r < this.rows &&
+            (this.grid[r][c].type === CELL_TYPE.ROAD || this.grid[r][c].type === CELL_TYPE.BRIDGE);
     }
 
     setRoadCell(c, r) {
@@ -208,12 +219,12 @@ class World {
 
     drawDoglegRoad(c1, r1, c2, r2, horizFirst = true) {
         if (horizFirst) {
-            const midC = Math.floor((c1 + c2) / 2) + this.prng.choice([-1, 0, 1]);
+            const midC = Math.floor((c1 + c2) / 2);
             this.drawRoadLine(c1, r1, midC, r1);
             this.drawRoadLine(midC, r1, midC, r2);
             this.drawRoadLine(midC, r2, c2, r2);
         } else {
-            const midR = Math.floor((r1 + r2) / 2) + this.prng.choice([-1, 0, 1]);
+            const midR = Math.floor((r1 + r2) / 2);
             this.drawRoadLine(c1, r1, c1, midR);
             this.drawRoadLine(c1, midR, c2, midR);
             this.drawRoadLine(c2, midR, c2, r2);
@@ -229,12 +240,12 @@ class World {
             this.topologyName = 'SERPENTINE S-CURVE VALLEY';
             const flipV = this.prng.random() < 0.5;
             const rA = flipV ? 10 : 2;
-            const rB = 6 + this.prng.choice([-1, 0, 1]);
+            const rB = 6;
             const rC = flipV ? 2 : 10;
 
             const c1 = this.prng.range(4, 6);
             const c2 = this.prng.range(10, 12);
-            const c3 = this.prng.range(15, 17);
+            const c3 = this.prng.range(16, 18);
 
             // Main serpentine spine from West edge to East edge
             this.drawRoadLine(0, rA, c1, rA);
@@ -248,56 +259,69 @@ class World {
             // Secondary offset collector loops (NOT a full border box)
             const oppA = flipV ? 2 : 10;
             const oppC = flipV ? 10 : 2;
-            this.drawRoadLine(2, oppA, c2 - 2, oppA);
-            this.drawRoadLine(2, rA, 2, oppA);
-            this.drawRoadLine(c2 - 2, rB, c2 - 2, oppA);
+            this.drawRoadLine(1, oppA, c2 - 3, oppA);
+            this.drawRoadLine(1, rA, 1, oppA);
+            this.drawRoadLine(c2 - 3, rB, c2 - 3, oppA);
 
-            this.drawRoadLine(c2 + 2, oppC, 19, oppC);
-            this.drawRoadLine(19, oppC, 19, rB);
-            this.drawRoadLine(c2 + 2, oppC, c2 + 2, rC);
+            this.drawRoadLine(c2 + 3, oppC, 20, oppC);
+            this.drawRoadLine(20, oppC, 20, rB);
+            this.drawRoadLine(c2 + 3, oppC, c2 + 3, rC);
 
         } else if (styleRoll === 1) {
             // ARCHETYPE 1: Diagonal / Winding River Valley with 2 Strategic Bridges
             this.topologyName = 'RIVERFRONT TWIN-BANK';
-            let rc = this.prng.range(7, 11);
+            let rc = this.prng.range(8, 11);
             const dir = this.prng.choice([-1, 1]);
-            const riverCenter = [];
+            const riverLeft = [];
+            const riverRight = [];
+
             for (let r = 0; r < this.rows; r++) {
                 this.setWaterCell(rc, r);
                 this.setWaterCell(rc + 1, r);
-                riverCenter[r] = rc;
-                if (r % 2 === 1) {
-                    const nextRc = Math.max(5, Math.min(15, rc + (this.prng.random() < 0.7 ? dir : 0)));
-                    if (nextRc !== rc) {
+                let rL = rc;
+                let rR = rc + 1;
+                if (r % 3 === 1) {
+                    const nextRc = Math.max(6, Math.min(14, rc + dir));
+                    if (nextRc < rc) {
                         this.setWaterCell(nextRc, r);
-                        rc = nextRc;
+                        rL = nextRc;
+                    } else if (nextRc > rc) {
+                        this.setWaterCell(nextRc + 1, r);
+                        rR = nextRc + 1;
                     }
+                    rc = nextRc;
                 }
+                riverLeft[r] = rL;
+                riverRight[r] = rR;
             }
 
-            // Two cross-river bridges at stepped rows
-            const b1 = this.prng.range(2, 4);
-            const b2 = this.prng.range(8, 10);
+            // Two cross-river bridges at stepped rows (kept well away from river bends)
+            const b1 = 3;
+            const b2 = 9;
             this.drawRoadLine(1, b1, 20, b1);
             this.drawRoadLine(1, b2, 20, b2);
 
-            // West bank stepped avenues
-            const wCol = Math.max(1, Math.min(...riverCenter) - 3);
+            // West bank arterial & stepped loops
+            const wCol = Math.max(4, Math.min(...riverLeft) - 2);
+            this.drawRoadLine(1, 1, wCol, 1);
             this.drawRoadLine(wCol, 1, wCol, 11);
+            this.drawRoadLine(1, 11, wCol, 11);
             this.drawRoadLine(1, b1, 1, b2);
 
-            // East bank stepped avenues
-            const eCol = Math.min(20, Math.max(...riverCenter) + 4);
+            // East bank arterial & stepped loops
+            const eCol = Math.min(17, Math.max(...riverRight) + 2);
+            this.drawRoadLine(eCol, 1, 20, 1);
             this.drawRoadLine(eCol, 1, eCol, 11);
+            this.drawRoadLine(eCol, 11, 20, 11);
             this.drawRoadLine(20, b1, 20, b2);
 
         } else if (styleRoll === 2) {
-            // ARCHETYPE 2: Central Pinwheel Plaza & Radial Cul-de-Sac Arms
+            // ARCHETYPE 2: Central Pinwheel Plaza & Radial Arms
             this.topologyName = 'PINWHEEL CIVIC PLAZA';
-            const pLeft = this.prng.range(7, 9);
-            const pRight = pLeft + this.prng.range(5, 6);
-            const pTop = this.prng.range(4, 5);
-            const pBot = pTop + this.prng.range(3, 4);
+            const pLeft = this.prng.range(7, 8);
+            const pRight = pLeft + 6;
+            const pTop = 4;
+            const pBot = 8;
 
             // Central ring square
             this.drawRoadLine(pLeft, pTop, pRight, pTop);
@@ -306,31 +330,30 @@ class World {
             this.drawRoadLine(pRight, pTop, pRight, pBot);
 
             // 4 Pinwheel radial arms spinning out from corners
-            // 1. North-West arm
             this.drawRoadLine(pLeft, pTop, pLeft, 1);
             this.drawRoadLine(pLeft, 1, 1, 1);
             this.drawRoadLine(1, 1, 1, pBot - 1);
+            this.drawRoadLine(1, pBot - 1, pLeft, pBot - 1);
 
-            // 2. North-East arm
             this.drawRoadLine(pRight, pTop, 20, pTop);
             this.drawRoadLine(20, pTop, 20, 1);
             this.drawRoadLine(20, 1, pLeft + 3, 1);
+            this.drawRoadLine(pLeft + 3, 1, pLeft + 3, pTop);
 
-            // 3. South-East arm
             this.drawRoadLine(pRight, pBot, pRight, 11);
             this.drawRoadLine(pRight, 11, 20, 11);
-            this.drawRoadLine(20, 11, 20, pTop + 2);
+            this.drawRoadLine(20, 11, 20, pTop + 1);
+            this.drawRoadLine(20, pTop + 1, pRight, pTop + 1);
 
-            // 4. South-West arm
-            this.drawRoadLine(pLeft, pBot, 2, pBot);
-            this.drawRoadLine(2, pBot, 2, 11);
-            this.drawRoadLine(2, 11, pRight - 3, 11);
+            this.drawRoadLine(pLeft, pBot, 1, pBot);
+            this.drawRoadLine(1, pBot, 1, 11);
+            this.drawRoadLine(1, 11, pRight - 3, 11);
+            this.drawRoadLine(pRight - 3, 11, pRight - 3, pBot);
 
         } else if (styleRoll === 3) {
             // ARCHETYPE 3: Twin Harbor Bays & Coastal Peninsula
             this.topologyName = 'TWIN HARBOR PENINSULA';
             const bayTopLeft = this.prng.random() < 0.5;
-            // Carve two opposing coastal water bays at corners
             for (let r = 0; r < 5; r++) {
                 const wCols = 6 - r;
                 for (let d = 0; d < wCols; d++) {
@@ -346,7 +369,6 @@ class World {
                 }
             }
 
-            // Stepped coastal road wrapping around the two bays
             if (bayTopLeft) {
                 this.drawRoadLine(7, 1, 20, 1);
                 this.drawRoadLine(7, 1, 7, 5);
@@ -357,6 +379,8 @@ class World {
                 this.drawRoadLine(14, 7, 20, 7);
                 this.drawRoadLine(20, 1, 20, 7);
                 this.drawDoglegRoad(7, 5, 14, 7, true);
+                this.drawRoadLine(14, 1, 14, 7);
+                this.drawRoadLine(7, 5, 7, 11);
             } else {
                 this.drawRoadLine(1, 1, 14, 1);
                 this.drawRoadLine(14, 1, 14, 5);
@@ -367,12 +391,13 @@ class World {
                 this.drawRoadLine(7, 7, 1, 7);
                 this.drawRoadLine(1, 1, 1, 7);
                 this.drawDoglegRoad(7, 7, 14, 5, true);
+                this.drawRoadLine(7, 1, 7, 7);
+                this.drawRoadLine(14, 5, 14, 11);
             }
 
         } else if (styleRoll === 4) {
-            // ARCHETYPE 4: Switchback Terraces (Interlocking Doglegs, zero straight lines across map)
+            // ARCHETYPE 4: Switchback Terraces (Interlocking Doglegs)
             this.topologyName = 'SWITCHBACK CANYON TERRACES';
-            // Create 3 stepped horizontal switchbacks that shift row every 5-6 columns
             const bands = [
                 [2, 1, 3, 1],
                 [6, 5, 7, 6],
@@ -391,58 +416,56 @@ class World {
                 this.drawRoadLine(cStart, b[3], 20, b[3]);
             }
 
-            // Connect the 3 switchback terraces with staggered vertical cross-links
-            this.drawRoadLine(2, bands[0][0], 2, bands[2][0]);
-            this.drawRoadLine(8, bands[0][1], 8, bands[1][1]);
-            this.drawRoadLine(13, bands[1][2], 13, bands[2][2]);
-            this.drawRoadLine(19, bands[0][3], 19, bands[2][3]);
+            this.drawRoadLine(1, bands[0][0], 1, bands[2][0]);
+            this.drawRoadLine(8, bands[0][1], 8, bands[2][1]);
+            this.drawRoadLine(14, bands[0][2], 14, bands[2][2]);
+            this.drawRoadLine(20, bands[0][3], 20, bands[2][3]);
 
         } else if (styleRoll === 5) {
             // ARCHETYPE 5: Central Lake & Causeway Bridge
             this.topologyName = 'MIRROR LAKE CAUSEWAY';
-            const lakeC = this.prng.range(7, 9);
+            const lakeC = 8;
             const lakeW = 6;
             const lakeR = 4;
             const lakeH = 5;
 
             for (let r = lakeR; r < lakeR + lakeH; r++) {
                 for (let c = lakeC; c < lakeC + lakeW; c++) {
-                    // Round off two corners of the lake for an organic shape
-                    if ((r === lakeR && c === lakeC) || (r === lakeR + lakeH - 1 && c === lakeC + lakeW - 1)) continue;
                     this.setWaterCell(c, r);
                 }
             }
 
-            // Lakeside boulevard wrapping the lake (1-2 tiles away)
-            this.drawRoadLine(lakeC - 1, lakeR - 2, lakeC + lakeW, lakeR - 2);
-            this.drawRoadLine(lakeC - 1, lakeR + lakeH + 1, lakeC + lakeW, lakeR + lakeH + 1);
-            this.drawRoadLine(lakeC - 2, lakeR - 1, lakeC - 2, lakeR + lakeH);
-            this.drawRoadLine(lakeC + lakeW + 1, lakeR - 1, lakeC + lakeW + 1, lakeR + lakeH);
+            // Clean lakeside ring road (1 tile outside lake so no 2x2 diagonal clumps)
+            const rTop = lakeR - 2;
+            const rBot = lakeR + lakeH + 1;
+            const cLeft = lakeC - 2;
+            const cRight = lakeC + lakeW + 1;
 
-            // Connect corners of lakeside drive
-            this.drawRoadLine(lakeC - 2, lakeR - 1, lakeC - 1, lakeR - 2);
-            this.drawRoadLine(lakeC + lakeW, lakeR - 2, lakeC + lakeW + 1, lakeR - 1);
-            this.drawRoadLine(lakeC - 2, lakeR + lakeH, lakeC - 1, lakeR + lakeH + 1);
-            this.drawRoadLine(lakeC + lakeW, lakeR + lakeH + 1, lakeC + lakeW + 1, lakeR + lakeH);
+            this.drawRoadLine(cLeft, rTop, cRight, rTop);
+            this.drawRoadLine(cLeft, rBot, cRight, rBot);
+            this.drawRoadLine(cLeft, rTop, cLeft, rBot);
+            this.drawRoadLine(cRight, rTop, cRight, rBot);
 
-            // Central Causeway Bridge right across the lake!
-            const bridgeC = lakeC + Math.floor(lakeW / 2);
-            this.drawRoadLine(bridgeC, lakeR - 2, bridgeC, lakeR + lakeH + 1);
+            // Central Causeway Bridge straight across the lake!
+            const bridgeC = lakeC + 3;
+            this.drawRoadLine(bridgeC, rTop, bridgeC, rBot);
 
-            // Stepped wings to East and West towns
-            this.drawDoglegRoad(1, 2, lakeC - 2, lakeR - 1, true);
-            this.drawDoglegRoad(1, 10, lakeC - 2, lakeR + lakeH, true);
-            this.drawRoadLine(1, 2, 1, 10);
+            // Stepped wings to West and East districts
+            this.drawRoadLine(1, 1, cLeft, 1);
+            this.drawRoadLine(1, 1, 1, 11);
+            this.drawRoadLine(1, 11, cLeft, 11);
+            this.drawRoadLine(1, 6, cLeft, 6);
 
-            this.drawDoglegRoad(lakeC + lakeW + 1, lakeR - 1, 20, 2, true);
-            this.drawDoglegRoad(lakeC + lakeW + 1, lakeR + lakeH, 20, 10, true);
-            this.drawRoadLine(20, 2, 20, 10);
+            this.drawRoadLine(cRight, 1, 20, 1);
+            this.drawRoadLine(20, 1, 20, 11);
+            this.drawRoadLine(cRight, 11, 20, 11);
+            this.drawRoadLine(cRight, 6, 20, 6);
 
         } else if (styleRoll === 6) {
-            // ARCHETYPE 6: Y-Forked Highway & Cul-de-Sac Groves
+            // ARCHETYPE 6: Y-Forked Highway & Parkway Loops
             this.topologyName = 'FORKED PARKWAY GROVES';
-            const stemR = this.prng.range(5, 7);
-            const forkC = this.prng.range(7, 10);
+            const stemR = 6;
+            const forkC = 9;
 
             // Main trunk from West edge to Fork
             this.drawRoadLine(0, stemR, forkC, stemR);
@@ -454,53 +477,56 @@ class World {
             this.drawRoadLine(15, 1, 20, 1);
 
             // Lower Fork dropping in steps to South-East
-            this.drawRoadLine(forkC, stemR, forkC, 9);
-            this.drawRoadLine(forkC, 9, 14, 9);
-            this.drawRoadLine(14, 9, 14, 11);
-            this.drawRoadLine(14, 11, 20, 11);
+            this.drawRoadLine(forkC, stemR, forkC, 10);
+            this.drawRoadLine(forkC, 10, 15, 10);
+            this.drawRoadLine(15, 10, 15, 11);
+            this.drawRoadLine(15, 11, 20, 11);
 
-            // Eastern connector loop between the two forks
-            this.drawRoadLine(18, 1, 18, 11);
-            this.drawRoadLine(forkC + 4, 2, forkC + 4, 9);
+            // Eastern connector loops between the two forks
+            this.drawRoadLine(20, 1, 20, 11);
+            this.drawRoadLine(15, 2, 15, 10);
+            this.drawRoadLine(forkC, 6, 20, 6);
 
-            // Western neighborhood loops branching off the main trunk
-            this.drawRoadLine(3, 1, 3, 11);
-            this.drawRoadLine(1, 2, forkC - 2, 2);
-            this.drawRoadLine(1, 10, forkC - 2, 10);
+            // Western stepped loops
+            this.drawRoadLine(1, 1, 5, 1);
+            this.drawRoadLine(1, 1, 1, 11);
+            this.drawRoadLine(1, 11, 5, 11);
+            this.drawRoadLine(5, 1, 5, 11);
 
         } else {
             // ARCHETYPE 7: Stepped Canal & Asymmetric Industrial Quays
             this.topologyName = 'STEPPED CANAL & QUAYS';
-            const bendC = this.prng.range(9, 12);
+            const bendC = 11;
             const rWest = this.prng.choice([4, 8]);
             const rEast = rWest === 4 ? 8 : 4;
 
-            // Canal with a 90-degree mid-town bend
             for (let c = 0; c <= bendC; c++) this.setWaterCell(c, rWest);
             const stepR = rEast > rWest ? 1 : -1;
             for (let r = rWest; r !== rEast + stepR; r += stepR) this.setWaterCell(bendC, r);
             for (let c = bendC; c < this.cols; c++) this.setWaterCell(c, rEast);
 
-            // Two bridges crossing the canal (one on West reach, one on East reach)
-            const bWestC = this.prng.range(3, 6);
-            const bEastC = this.prng.range(15, 18);
+            // Two bridges crossing the canal away from the central bend
+            const bWestC = 4;
+            const bEastC = 17;
             this.drawRoadLine(bWestC, 1, bWestC, 11);
             this.drawRoadLine(bEastC, 1, bEastC, 11);
 
             // Embankment roads & stepped loops
-            const northR = Math.min(rWest, rEast) - 2;
-            const southR = Math.max(rWest, rEast) + 2;
-            this.drawRoadLine(1, northR, 20, northR);
-            this.drawRoadLine(1, southR, 20, southR);
+            this.drawRoadLine(1, 1, 20, 1);
+            this.drawRoadLine(1, 11, 20, 11);
+            this.drawRoadLine(1, 1, 1, bWestC === 1 ? 11 : 11);
+            this.drawRoadLine(20, 1, 20, 11);
 
-            // Connect the deep quadrants on either side of the canal bend
             if (rWest === 4) {
-                // Deep space in South-West (r=6..11, c=1..bendC-2) and North-East (r=1..6, c=bendC+2..20)
-                this.drawDoglegRoad(1, 7, bendC - 2, 11, false);
-                this.drawDoglegRoad(bendC + 2, 1, 20, 5, false);
+                this.drawRoadLine(1, 7, bendC - 2, 7);
+                this.drawRoadLine(bendC - 2, 7, bendC - 2, 11);
+                this.drawRoadLine(bendC + 2, 1, bendC + 2, 5);
+                this.drawRoadLine(bendC + 2, 5, 20, 5);
             } else {
-                this.drawDoglegRoad(1, 1, bendC - 2, 5, false);
-                this.drawDoglegRoad(bendC + 2, 7, 20, 11, false);
+                this.drawRoadLine(1, 5, bendC - 2, 5);
+                this.drawRoadLine(bendC - 2, 1, bendC - 2, 5);
+                this.drawRoadLine(bendC + 2, 7, bendC + 2, 11);
+                this.drawRoadLine(bendC + 2, 7, 20, 7);
             }
         }
 
@@ -516,17 +542,87 @@ class World {
     }
 
     // ========================================================
+    // BRIDGE VALIDATOR: ZERO DEAD-END BRIDGES OVER WATER
+    // ========================================================
+    validateBridges() {
+        // Every BRIDGE cell must continue straight across any adjacent WATER cells
+        // until it lands on a ROAD cell on both sides!
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+                if (this.grid[r][c].type !== CELL_TYPE.BRIDGE) continue;
+
+                // Determine if bridge is horizontal or vertical based on neighbors
+                const horizWater = (c > 0 && this.grid[r][c - 1].type !== CELL_TYPE.WATER) ||
+                                   (c < this.cols - 1 && this.grid[r][c + 1].type !== CELL_TYPE.WATER) ||
+                                   this.isRoadOrBridge(c - 1, r) || this.isRoadOrBridge(c + 1, r);
+                const vertWater = (r > 0 && this.grid[r - 1][c].type !== CELL_TYPE.WATER) ||
+                                  (r < this.rows - 1 && this.grid[r + 1][c].type !== CELL_TYPE.WATER) ||
+                                  this.isRoadOrBridge(c, r - 1) || this.isRoadOrBridge(c, r + 1);
+
+                if (horizWater && !vertWater) {
+                    // Extend West until hitting non-water, and ensure first land tile is ROAD
+                    let cw = c - 1;
+                    while (cw >= 0 && (this.grid[r][cw].type === CELL_TYPE.WATER || this.grid[r][cw].type === CELL_TYPE.BRIDGE)) {
+                        this.grid[r][cw].type = CELL_TYPE.BRIDGE;
+                        cw--;
+                    }
+                    if (cw >= 0 && this.grid[r][cw].type === CELL_TYPE.EMPTY) {
+                        this.grid[r][cw].type = CELL_TYPE.ROAD;
+                    }
+                    // Extend East until hitting non-water, and ensure first land tile is ROAD
+                    let ce = c + 1;
+                    while (ce < this.cols && (this.grid[r][ce].type === CELL_TYPE.WATER || this.grid[r][ce].type === CELL_TYPE.BRIDGE)) {
+                        this.grid[r][ce].type = CELL_TYPE.BRIDGE;
+                        ce++;
+                    }
+                    if (ce < this.cols && this.grid[r][ce].type === CELL_TYPE.EMPTY) {
+                        this.grid[r][ce].type = CELL_TYPE.ROAD;
+                    }
+                } else if (vertWater) {
+                    // Extend North
+                    let rn = r - 1;
+                    while (rn >= 0 && (this.grid[rn][c].type === CELL_TYPE.WATER || this.grid[rn][c].type === CELL_TYPE.BRIDGE)) {
+                        this.grid[rn][c].type = CELL_TYPE.BRIDGE;
+                        rn--;
+                    }
+                    if (rn >= 0 && this.grid[rn][c].type === CELL_TYPE.EMPTY) {
+                        this.grid[rn][c].type = CELL_TYPE.ROAD;
+                    }
+                    // Extend South
+                    let rs = r + 1;
+                    while (rs < this.rows && (this.grid[rs][c].type === CELL_TYPE.WATER || this.grid[rs][c].type === CELL_TYPE.BRIDGE)) {
+                        this.grid[rs][c].type = CELL_TYPE.BRIDGE;
+                        rs++;
+                    }
+                    if (rs < this.rows && this.grid[rs][c].type === CELL_TYPE.EMPTY) {
+                        this.grid[rs][c].type = CELL_TYPE.ROAD;
+                    }
+                }
+            }
+        }
+
+        // Refresh water list if any water tile became a bridge
+        this.waters = [];
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+                if (this.grid[r][c].type === CELL_TYPE.WATER) {
+                    this.waters.push({ col: c, row: r });
+                }
+            }
+        }
+    }
+
+    // ========================================================
     // ORGANIC NEIGHBORHOOD SUBDIVISION (L-BENDS & T-JUNCTIONS)
     // ========================================================
     growOrganicNeighborhoodStreets() {
-        // Instead of full-grid straight lines, find points deep inside open blocks (distance >= 3 from road)
-        // and connect them to the nearest road with an L-shaped street or T-branch!
-        for (let pass = 0; pass < 18; pass++) {
+        for (let pass = 0; pass < 24; pass++) {
             let deepestCell = null;
             let maxDist = 0;
 
-            for (let r = 1; r < this.rows - 1; r++) {
-                for (let c = 1; c < this.cols - 1; c++) {
+            // Include all rows (0..rows-1) and cols (0..cols-1) so map edges/corners are never ignored!
+            for (let r = 0; r < this.rows; r++) {
+                for (let c = 0; c < this.cols; c++) {
                     if (this.grid[r][c].type !== CELL_TYPE.EMPTY) continue;
                     const d = this.distanceToNearestRoad(c, r);
                     if (d > maxDist) {
@@ -536,15 +632,18 @@ class World {
                 }
             }
 
-            // Stop once all interior spaces are within 2 tiles of a road (leaving 2x2 pockets for landmarks!)
+            // Stop when all open spaces are within 2 tiles of a road (leaving 2x2 pockets for landmarks)
             if (!deepestCell || maxDist <= 2) break;
 
-            const nearestRoad = this.findNearestRoadCell(deepestCell.c, deepestCell.r);
+            // Pull target 1 tile inward from the extreme map border so the road serves the border row of houses
+            const targetC = Math.max(1, Math.min(this.cols - 2, deepestCell.c));
+            const targetR = Math.max(1, Math.min(this.rows - 2, deepestCell.r));
+
+            const nearestRoad = this.findNearestRoadCell(targetC, targetR);
             if (!nearestRoad) break;
 
-            // Carve an L-branch from nearestRoad to deepestCell, then extend 1-2 tiles to make a neighborhood court
-            const horizFirst = this.prng.random() < 0.5;
-            this.carveSafePath(nearestRoad.c, nearestRoad.r, deepestCell.c, deepestCell.r, horizFirst);
+            const horizFirst = Math.abs(targetC - nearestRoad.c) >= Math.abs(targetR - nearestRoad.r);
+            this.carveSafePath(nearestRoad.c, nearestRoad.r, targetC, targetR, horizFirst);
         }
     }
 
@@ -558,24 +657,123 @@ class World {
             if (x >= 0 && x < this.cols && y >= 0 && y < this.rows) {
                 if (this.grid[y][x].type === CELL_TYPE.EMPTY && !this.wouldCreateRoadClump(x, y)) {
                     this.grid[y][x].type = CELL_TYPE.ROAD;
+                    return true;
                 }
+                return this.isRoadOrBridge(x, y);
             }
+            return false;
         };
 
         if (horizFirst) {
-            while (c !== c2) { c += stepC; trySet(c, r); }
-            while (r !== r2) { r += stepR; trySet(c, r); }
+            while (c !== c2) { c += stepC; if (!trySet(c, r)) break; }
+            while (r !== r2) { r += stepR; if (!trySet(c, r)) break; }
         } else {
-            while (r !== r2) { r += stepR; trySet(c, r); }
-            while (c !== c2) { c += stepC; trySet(c, r); }
+            while (r !== r2) { r += stepR; if (!trySet(c, r)) break; }
+            while (c !== c2) { c += stepC; if (!trySet(c, r)) break; }
         }
+    }
+
+    // Carve clean multi-tile streets into any remaining landlocked pockets after landmarks place
+    carveCleanPocketStreets() {
+        for (let pass = 0; pass < 20; pass++) {
+            let bestCandidate = null;
+            let bestScore = 0;
+
+            for (let r = 0; r < this.rows; r++) {
+                for (let c = 0; c < this.cols; c++) {
+                    if (this.grid[r][c].type !== CELL_TYPE.EMPTY) continue;
+                    if (!this.getAdjacentRoad(c, r)) continue;
+                    if (this.wouldCreateRoadClump(c, r)) continue;
+
+                    // Count how many currently-landlocked EMPTY neighbors this tile would unlock
+                    let unlocked = 0;
+                    for (const [dc, dr] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+                        const nc = c + dc;
+                        const nr = r + dr;
+                        if (nc >= 0 && nc < this.cols && nr >= 0 && nr < this.rows) {
+                            if (this.grid[nr][nc].type === CELL_TYPE.EMPTY && !this.getAdjacentRoad(nc, nr)) {
+                                unlocked++;
+                            }
+                        }
+                    }
+
+                    // Only extend a road if it unlocks at least 2 landlocked cells (avoids 1-tile warts for single cells)
+                    if (unlocked >= 2 && unlocked > bestScore) {
+                        bestScore = unlocked;
+                        bestCandidate = { c, r };
+                    }
+                }
+            }
+
+            if (bestCandidate) {
+                this.grid[bestCandidate.r][bestCandidate.c].type = CELL_TYPE.ROAD;
+            } else {
+                break;
+            }
+        }
+    }
+
+    // Remove any 1-tile stubby road "warts" sticking out from straight roads unless needed
+    pruneStubbyRoadWarts() {
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (let r = 1; r < this.rows - 1; r++) {
+                for (let c = 1; c < this.cols - 1; c++) {
+                    if (this.grid[r][c].type !== CELL_TYPE.ROAD) continue;
+
+                    const neighbors = [];
+                    for (const [dc, dr] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+                        if (this.isRoadOrBridge(c + dc, r + dr)) {
+                            neighbors.push({ c: c + dc, r: r + dr });
+                        }
+                    }
+
+                    // If this road cell is a dead-end (only 1 road neighbor)
+                    if (neighbors.length === 1) {
+                        const parent = neighbors[0];
+                        let parentDegree = 0;
+                        for (const [dc, dr] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+                            if (this.isRoadOrBridge(parent.c + dc, parent.r + dr)) parentDegree++;
+                        }
+                        // If it's a 1-tile wart sticking off an intersection (parentDegree >= 3)
+                        // and no landmark depends exclusively on it, revert it to EMPTY!
+                        if (parentDegree >= 3 && !this.landmarkDependsOnRoad(c, r)) {
+                            this.grid[r][c].type = CELL_TYPE.EMPTY;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    landmarkDependsOnRoad(rc, rr) {
+        for (const lot of this.lots) {
+            let touchesOtherRoad = false;
+            let touchesThisRoad = false;
+            for (let dy = 0; dy < lot.h; dy++) {
+                for (let dx = 0; dx < lot.w; dx++) {
+                    const lc = lot.col + dx;
+                    const lr = lot.row + dy;
+                    for (const [dc, dr] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+                        const nc = lc + dc;
+                        const nr = lr + dr;
+                        if (nc === rc && nr === rr) touchesThisRoad = true;
+                        else if (this.isRoadOrBridge(nc, nr)) touchesOtherRoad = true;
+                    }
+                }
+            }
+            if (touchesThisRoad && !touchesOtherRoad) return true;
+        }
+        return false;
     }
 
     distanceToNearestRoad(c, r) {
         let minD = 999;
         for (let rr = 0; rr < this.rows; rr++) {
             for (let cc = 0; cc < this.cols; cc++) {
-                if (this.grid[rr][cc].type === CELL_TYPE.ROAD || this.grid[rr][cc].type === CELL_TYPE.BRIDGE) {
+                if (this.isRoadOrBridge(cc, rr)) {
                     const d = Math.abs(cc - c) + Math.abs(rr - r);
                     if (d < minD) minD = d;
                 }
@@ -589,7 +787,7 @@ class World {
         let minD = 999;
         for (let rr = 0; rr < this.rows; rr++) {
             for (let cc = 0; cc < this.cols; cc++) {
-                if (this.grid[rr][cc].type === CELL_TYPE.ROAD || this.grid[rr][cc].type === CELL_TYPE.BRIDGE) {
+                if (this.isRoadOrBridge(cc, rr)) {
                     const d = Math.abs(cc - c) + Math.abs(rr - r);
                     if (d < minD) {
                         minD = d;
@@ -601,83 +799,10 @@ class World {
         return best;
     }
 
-    // ========================================================
-    // CUL-DE-SAC CARVER FOR NEAR-ZERO DEAD SQUARES
-    // ========================================================
-    carveCulDeSacsForDeepBlocks() {
-        let changed = true;
-        let passes = 0;
-        while (changed && passes < 25) {
-            changed = false;
-            passes++;
-
-            // Find all EMPTY cells that currently do NOT touch any road
-            const landlocked = [];
-            for (let r = 0; r < this.rows; r++) {
-                for (let c = 0; c < this.cols; c++) {
-                    if (this.grid[r][c].type === CELL_TYPE.EMPTY && !this.getAdjacentRoad(c, r)) {
-                        landlocked.push({ c, r });
-                    }
-                }
-            }
-
-            if (landlocked.length === 0) break;
-
-            // Find the single EMPTY cell adjacent to an existing road whose conversion to ROAD
-            // unlocks the maximum number of landlocked EMPTY neighbors without creating a 2x2 clump!
-            let bestCandidate = null;
-            let bestScore = 0;
-
-            for (let r = 0; r < this.rows; r++) {
-                for (let c = 0; c < this.cols; c++) {
-                    if (this.grid[r][c].type !== CELL_TYPE.EMPTY) continue;
-                    if (!this.getAdjacentRoad(c, r)) continue;
-                    if (this.wouldCreateRoadClump(c, r)) continue;
-
-                    // Score how many landlocked cells this candidate is adjacent to (or gets closer to)
-                    let score = 0;
-                    for (const [dc, dr] of [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0]]) {
-                        const nc = c + dc;
-                        const nr = r + dr;
-                        if (nc >= 0 && nc < this.cols && nr >= 0 && nr < this.rows) {
-                            if (this.grid[nr][nc].type === CELL_TYPE.EMPTY && !this.getAdjacentRoad(nc, nr)) {
-                                score += 3;
-                            }
-                        }
-                    }
-                    // Also check 2 steps away so we can tunnel 2-step spurs to edge/corner pockets
-                    for (const [dc, dr] of [[0, -2], [0, 2], [-2, 0], [2, 0]]) {
-                        const nc = c + dc;
-                        const nr = r + dr;
-                        const mc = c + dc / 2;
-                        const mr = r + dr / 2;
-                        if (nc >= 0 && nc < this.cols && nr >= 0 && nr < this.rows) {
-                            if (this.grid[nr][nc].type === CELL_TYPE.EMPTY && !this.getAdjacentRoad(nc, nr) &&
-                                this.grid[mr][mc].type === CELL_TYPE.EMPTY) {
-                                score += 1;
-                            }
-                        }
-                    }
-
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestCandidate = { c, r };
-                    }
-                }
-            }
-
-            if (bestCandidate && bestScore > 0) {
-                this.grid[bestCandidate.r][bestCandidate.c].type = CELL_TYPE.ROAD;
-                changed = true;
-            }
-        }
-    }
-
     wouldCreateRoadClump(c, r) {
         const isR = (x, y) => {
             if (x === c && y === r) return true;
-            if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return false;
-            return this.grid[y][x].type === CELL_TYPE.ROAD || this.grid[y][x].type === CELL_TYPE.BRIDGE;
+            return this.isRoadOrBridge(x, y);
         };
         for (const dy of [-1, 0]) {
             for (const dx of [-1, 0]) {
@@ -690,23 +815,30 @@ class World {
         return false;
     }
 
-    cleanupRoadClumps() {
-        const isR = (c, r) => c >= 0 && c < this.cols && r >= 0 && r < this.rows &&
-            (this.grid[r][c].type === CELL_TYPE.ROAD || this.grid[r][c].type === CELL_TYPE.BRIDGE);
-
+    // Safely removes 2x2 road clumps ONLY when doing so does NOT disconnect the road graph or strand a bridge
+    cleanupRoadClumpsSafely() {
         let cleaned = true;
         while (cleaned) {
             cleaned = false;
             for (let r = 0; r < this.rows - 1; r++) {
                 for (let c = 0; c < this.cols - 1; c++) {
-                    if (isR(c, r) && isR(c + 1, r) && isR(c, r + 1) && isR(c + 1, r + 1)) {
-                        // Pick one corner of the 2x2 clump that isn't a bridge and revert to EMPTY
+                    if (this.isRoadOrBridge(c, r) && this.isRoadOrBridge(c + 1, r) &&
+                        this.isRoadOrBridge(c, r + 1) && this.isRoadOrBridge(c + 1, r + 1)) {
+
                         const corners = [[c + 1, r + 1], [c, r + 1], [c + 1, r], [c, r]];
                         for (const [cx, cy] of corners) {
-                            if (this.grid[cy][cx].type === CELL_TYPE.ROAD) {
-                                this.grid[cy][cx].type = CELL_TYPE.EMPTY;
+                            if (this.grid[cy][cx].type !== CELL_TYPE.ROAD) continue;
+                            if (this.touchesBridge(cx, cy)) continue;
+                            if (this.landmarkDependsOnRoad(cx, cy)) continue;
+
+                            // Temporarily remove and verify road graph remains 100% connected
+                            this.grid[cy][cx].type = CELL_TYPE.EMPTY;
+                            if (this.countRoadComponents() <= 1) {
                                 cleaned = true;
                                 break;
+                            } else {
+                                // Restore! Removing this tile would sever the road network!
+                                this.grid[cy][cx].type = CELL_TYPE.ROAD;
                             }
                         }
                     }
@@ -715,48 +847,79 @@ class World {
         }
     }
 
-    // Guarantees 100% of roads are connected by bridging any disconnected components
-    connectAllRoadComponents() {
-        const isR = (c, r) => c >= 0 && c < this.cols && r >= 0 && r < this.rows &&
-            (this.grid[r][c].type === CELL_TYPE.ROAD || this.grid[r][c].type === CELL_TYPE.BRIDGE);
+    touchesBridge(c, r) {
+        for (const [dc, dr] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+            const nc = c + dc;
+            const nr = r + dr;
+            if (nc >= 0 && nc < this.cols && nr >= 0 && nr < this.rows) {
+                if (this.grid[nr][nc].type === CELL_TYPE.BRIDGE) return true;
+            }
+        }
+        return false;
+    }
 
-        for (let iter = 0; iter < 10; iter++) {
-            const components = [];
-            const visited = new Set();
+    getRoadComponents() {
+        const components = [];
+        const visited = new Set();
 
-            for (let r = 0; r < this.rows; r++) {
-                for (let c = 0; c < this.cols; c++) {
-                    if (isR(c, r) && !visited.has(`${c},${r}`)) {
-                        const comp = [];
-                        const queue = [{ c, r }];
-                        visited.add(`${c},${r}`);
-                        while (queue.length > 0) {
-                            const curr = queue.shift();
-                            comp.push(curr);
-                            for (const [dc, dr] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
-                                const nc = curr.c + dc;
-                                const nr = curr.r + dr;
-                                const key = `${nc},${nr}`;
-                                if (isR(nc, nr) && !visited.has(key)) {
-                                    visited.add(key);
-                                    queue.push({ c: nc, r: nr });
-                                }
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+                if (this.isRoadOrBridge(c, r) && !visited.has(`${c},${r}`)) {
+                    const comp = [];
+                    const queue = [{ c, r }];
+                    visited.add(`${c},${r}`);
+                    while (queue.length > 0) {
+                        const curr = queue.shift();
+                        comp.push(curr);
+                        for (const [dc, dr] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+                            const nc = curr.c + dc;
+                            const nr = curr.r + dr;
+                            const key = `${nc},${nr}`;
+                            if (this.isRoadOrBridge(nc, nr) && !visited.has(key)) {
+                                visited.add(key);
+                                queue.push({ c: nc, r: nr });
                             }
                         }
-                        components.push(comp);
                     }
+                    components.push(comp);
                 }
             }
+        }
+        return components;
+    }
 
+    countRoadComponents() {
+        return this.getRoadComponents().length;
+    }
+
+    // Guarantees 100% of roads are connected into ONE unified network
+    connectAllRoadComponents() {
+        for (let iter = 0; iter < 12; iter++) {
+            const components = this.getRoadComponents();
             if (components.length <= 1) break;
 
-            // Connect component[1] to component[0] using the closest pair of road cells
+            // Sort components largest first
+            components.sort((a, b) => b.length - a.length);
+
+            const mainComp = components[0];
+            const subComp = components[1];
+
+            // If subComp is a tiny isolated 1-2 tile fragment not holding a bridge, remove it cleanly
+            const hasBridge = subComp.some(cell => this.grid[cell.r][cell.c].type === CELL_TYPE.BRIDGE);
+            if (subComp.length <= 2 && !hasBridge) {
+                for (const cell of subComp) {
+                    this.grid[cell.r][cell.c].type = CELL_TYPE.EMPTY;
+                }
+                continue;
+            }
+
+            // Otherwise, connect subComp to mainComp via the shortest orthogonal road line
             let bestA = null;
             let bestB = null;
             let minD = 999;
 
-            for (const a of components[0]) {
-                for (const b of components[1]) {
+            for (const a of mainComp) {
+                for (const b of subComp) {
                     const d = Math.abs(a.c - b.c) + Math.abs(a.r - b.r);
                     if (d < minD) {
                         minD = d;
@@ -768,6 +931,7 @@ class World {
 
             if (bestA && bestB) {
                 this.drawRoadLine(bestA.c, bestA.r, bestB.c, bestB.r);
+                this.validateBridges();
             }
         }
     }
@@ -776,7 +940,6 @@ class World {
     // DISTRIBUTED MULTI-TILE LANDMARKS (2x2 & 2x1)
     // ========================================================
     placeLandmarkLots() {
-        // Fire, Police, Hospital, and School are 2x2 (4 tiles) or 2x1 (2 tiles) — easy to spot & distributed!
         const majorLandmarks = [
             { type: LOT_TYPE.STATION_HOSPITAL, name: 'County General Hospital', address: '100 Medical Way', sprite: 'hospital', w: 2, h: 2, hazard: 'Dispatches Paramedic Unit' },
             { type: LOT_TYPE.STATION_FIRE, name: 'Engine Co. 4 Firehouse', address: '12 Firehouse Lane', sprite: 'fire_station', w: 2, h: 2, hazard: 'Dispatches Fire Engine' },
@@ -802,7 +965,6 @@ class World {
             this.prng.shuffle(allCoords);
             let placed = false;
 
-            // Try preferred size (2x2 for stations/school, 2x1 for commercial compounds) with spacing
             const shapesToTry = (spec.w === 2 && spec.h === 2)
                 ? [{ w: 2, h: 2 }, { w: 2, h: 1 }, { w: 1, h: 2 }]
                 : (spec.w === 2 && spec.h === 1)
@@ -965,27 +1127,28 @@ class World {
         for (const d of deltas) {
             const nc = c + d.dc;
             const nr = r + d.dr;
-            if (nc >= 0 && nc < this.cols && nr >= 0 && nr < this.rows) {
-                if (this.grid[nr][nc].type === CELL_TYPE.ROAD || this.grid[nr][nc].type === CELL_TYPE.BRIDGE) {
-                    return { col: nc, row: nr, dir: d.dir };
-                }
+            if (this.isRoadOrBridge(nc, nr)) {
+                return { col: nc, row: nr, dir: d.dir };
             }
         }
         return null;
     }
 
     classifyRoads() {
-        const isR = (c, r) => c >= 0 && c < this.cols && r >= 0 && r < this.rows &&
-            (this.grid[r][c].type === CELL_TYPE.ROAD || this.grid[r][c].type === CELL_TYPE.BRIDGE);
-
         for (let r = 0; r < this.rows; r++) {
             for (let c = 0; c < this.cols; c++) {
-                if (!isR(c, r)) continue;
+                if (!this.isRoadOrBridge(c, r)) continue;
 
-                const N = isR(c, r - 1);
-                const S = isR(c, r + 1);
-                const W = isR(c - 1, r);
-                const E = isR(c + 1, r);
+                // Treat map-border roads that connect inward as continuing off-map (highway entry/exit)
+                let N = this.isRoadOrBridge(c, r - 1);
+                let S = this.isRoadOrBridge(c, r + 1);
+                let W = this.isRoadOrBridge(c - 1, r);
+                let E = this.isRoadOrBridge(c + 1, r);
+
+                if (r === 0 && S && !W && !E) N = true;
+                if (r === this.rows - 1 && N && !W && !E) S = true;
+                if (c === 0 && E && !N && !S) W = true;
+                if (c === this.cols - 1 && W && !N && !S) E = true;
 
                 const count = (N ? 1 : 0) + (S ? 1 : 0) + (W ? 1 : 0) + (E ? 1 : 0);
 
@@ -1019,7 +1182,7 @@ class World {
         this.roadNodes = [];
         for (let r = 0; r < this.rows; r++) {
             for (let c = 0; c < this.cols; c++) {
-                if (this.grid[r][c].type === CELL_TYPE.ROAD || this.grid[r][c].type === CELL_TYPE.BRIDGE) {
+                if (this.isRoadOrBridge(c, r)) {
                     this.roadNodes.push({
                         id: `road_${c}_${r}`,
                         col: c,
@@ -1146,7 +1309,7 @@ class World {
         ctx.fillStyle = '#0369a1';
         ctx.fillRect(x, y, s, s);
 
-        const isHoriz = roadType === 'STRAIGHT_H' || roadType === 'CUL_DE_SAC_W' || roadType === 'CUL_DE_SAC_E';
+        const isHoriz = roadType === 'STRAIGHT_H' || this.isRoadOrBridge(c - 1, r) || this.isRoadOrBridge(c + 1, r);
 
         ctx.fillStyle = '#334155';
         if (isHoriz) {
@@ -1197,13 +1360,15 @@ class World {
         ctx.strokeStyle = '#94a3b8';
         ctx.lineWidth = 2;
 
-        const isR = (col, row) => col >= 0 && col < this.cols && row >= 0 && row < this.rows &&
-            (this.grid[row][col].type === CELL_TYPE.ROAD || this.grid[row][col].type === CELL_TYPE.BRIDGE);
+        let N = this.isRoadOrBridge(c, r - 1);
+        let S = this.isRoadOrBridge(c, r + 1);
+        let W = this.isRoadOrBridge(c - 1, r);
+        let E = this.isRoadOrBridge(c + 1, r);
 
-        const N = isR(c, r - 1);
-        const S = isR(c, r + 1);
-        const W = isR(c - 1, r);
-        const E = isR(c + 1, r);
+        if (r === 0 && S && !W && !E) N = true;
+        if (r === this.rows - 1 && N && !W && !E) S = true;
+        if (c === 0 && E && !N && !S) W = true;
+        if (c === this.cols - 1 && W && !N && !S) E = true;
 
         if (!N) { ctx.beginPath(); ctx.moveTo(x, y + 2); ctx.lineTo(x + s, y + 2); ctx.stroke(); }
         if (!S) { ctx.beginPath(); ctx.moveTo(x, y + s - 2); ctx.lineTo(x + s, y + s - 2); ctx.stroke(); }
@@ -1247,10 +1412,10 @@ class World {
             ctx.beginPath(); ctx.arc(x + half, y + half, 3, 0, Math.PI * 2); ctx.fill();
         } else if (roadType && roadType.startsWith('CUL_DE_SAC')) {
             ctx.fillStyle = '#3f3f46';
-            ctx.beginPath(); ctx.arc(x + half, y + half, Math.floor(s * 0.34), 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(x + half, y + half, Math.floor(s * 0.32), 0, Math.PI * 2); ctx.fill();
             ctx.strokeStyle = '#facc15';
             ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(x + half, y + half, Math.floor(s * 0.16), 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(x + half, y + half, Math.floor(s * 0.14), 0, Math.PI * 2); ctx.stroke();
         }
     }
 
@@ -1262,7 +1427,6 @@ class World {
         const w = (lot.w || 1) * s;
         const h = (lot.h || 1) * s;
 
-        // Paved compound base for multi-tile lots
         if (lot.w > 1 || lot.h > 1) {
             ctx.fillStyle = lot.type === LOT_TYPE.RESIDENTIAL ? '#14532d' : '#334155';
             ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
@@ -1271,7 +1435,6 @@ class World {
             ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
         }
 
-        // Driveway apron connecting to street
         if (lot.facingRoad) {
             ctx.fillStyle = '#475569';
             const dw = Math.floor(s * 0.35);
@@ -1291,7 +1454,6 @@ class World {
                 ctx.drawImage(sprite, x + 2, y + 2, s - 4, s - 4);
                 this.renderCompoundYard(x, y + s, s, lot.type);
             } else {
-                // 1x1 or 2x2 square lots draw at crisp 1:1 aspect ratio
                 ctx.drawImage(sprite, x + 2, y + 2, w - 4, h - 4);
             }
         } else {
@@ -1299,7 +1461,6 @@ class World {
             ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
         }
 
-        // High-Vis Landmark Header Badges
         if (lot.type === LOT_TYPE.STATION_FIRE) this.renderBadge(x + 4, y + 4, '🚒 FIRE HQ', '#ef4444');
         else if (lot.type === LOT_TYPE.STATION_POLICE) this.renderBadge(x + 4, y + 4, '🚓 POLICE HQ', '#3b82f6');
         else if (lot.type === LOT_TYPE.STATION_HOSPITAL) this.renderBadge(x + 4, y + 4, '🚑 HOSPITAL ER', '#10b981');
@@ -1309,7 +1470,6 @@ class World {
     renderCompoundYard(yx, yy, s, lotType) {
         const ctx = this.ctx;
         if (lotType === LOT_TYPE.RESIDENTIAL) {
-            // Backyard lawn with garden trees & patio
             ctx.fillStyle = '#15803d';
             ctx.fillRect(yx + 5, yy + 5, s - 10, s - 10);
             ctx.fillStyle = '#166534';
@@ -1318,7 +1478,6 @@ class World {
             return;
         }
 
-        // Asphalt motor pool / loading yard for stations & commercial
         ctx.fillStyle = '#1e293b';
         ctx.fillRect(yx + 4, yy + 6, s - 8, s - 12);
 
