@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CHRONOS DISPATCH // Time Management Emergency Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- CRT Scanline Overlay -->
+    <div class="crt-overlay" id="crt-overlay"></div>
+
+    <!-- Top System Ticker -->
+    <header class="top-ticker">
+        <div class="system-title">
+            <span class="status-dot"></span>
+            CAD-OS v1.0.4 // REGIONAL 911 DISPATCH NETWORK
+        </div>
+        <div class="ticker-stats">
+            <div class="ticker-item">DISTRICT: <span id="ticker-district">#1042</span></div>
+            <div class="ticker-item">WEATHER: <span>CLEAR / 68°F</span></div>
+            <div class="ticker-item">UNITS ONLINE: <span>POLICE (1) | FIRE (1) | MED (1)</span></div>
+        </div>
+    </header>
+
+    <!-- ==========================================
+         MENU SCREEN (Title, Showcase & Actions)
+         ========================================== -->
+    <main class="screen" id="menu-screen">
+        <div class="menu-container">
+            <div class="game-logo-wrapper">
+                <h1 class="game-title">CHRONOS DISPATCH</h1>
+                <div class="game-subtitle">TIME-LOOP EMERGENCY MANAGEMENT // 08:00 AM – 09:00 AM</div>
+            </div>
+
+            <!-- Animated Pixel Art Showcase -->
+            <div class="menu-showcase">
+                <div class="showcase-item">
+                    <img src="assets/vehicles/siren_police.gif" alt="Police Cruiser">
+                    <div class="showcase-label">UNIT 101</div>
+                </div>
+                <div class="showcase-item">
+                    <img src="assets/stations/fire_station_1.png" alt="Firehouse">
+                    <div class="showcase-label">STATION 3</div>
+                </div>
+                <div class="showcase-item">
+                    <img src="assets/vehicles/siren_fire.gif" alt="Fire Engine">
+                    <div class="showcase-label">ENGINE 4</div>
+                </div>
+                <div class="showcase-item">
+                    <img src="assets/residential/house_01_blue_suburban.png" alt="House">
+                    <div class="showcase-label">OAK ST</div>
+                </div>
+                <div class="showcase-item">
+                    <img src="assets/vehicles/siren_ambulance.gif" alt="Ambulance">
+                    <div class="showcase-label">MEDIC 2</div>
+                </div>
+            </div>
+
+            <div class="clock-badge">
+                <span>TIMELINE STATUS:</span>
+                <span class="time" id="menu-clock">08:00:00 AM</span>
+                <span>[STANDBY]</span>
+            </div>
+
+            <!-- Menu Navigation Buttons -->
+            <div class="menu-buttons">
+                <button class="btn btn-primary" id="btn-start-shift">
+                    <span>🚨</span> START SHIFT (08:00 AM)
+                </button>
+
+                <div class="seed-row">
+                    <input type="text" class="seed-input" id="seed-input" value="1042" title="District Seed">
+                    <button class="btn" id="btn-random-seed" title="Randomize District Seed">🎲 NEW SEED</button>
+                </div>
+
+                <button class="btn" id="btn-briefing">
+                    <span>📋</span> MISSION BRIEFING
+                </button>
+
+                <button class="btn" id="btn-settings">
+                    <span>⚙️</span> SYSTEM SETTINGS
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==========================================
+         SETTINGS MODAL
+         ========================================== -->
+    <div class="modal-backdrop hidden" id="settings-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>CAD TERMINAL SETTINGS</h2>
+                <button class="modal-close" id="btn-close-settings">&times;</button>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">Master Volume</div>
+                    <div class="setting-desc">Adjust sound effects & synthesizer volume</div>
+                </div>
+                <input type="range" id="setting-volume" min="0" max="100" value="70">
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">Audio SFX</div>
+                    <div class="setting-desc">Terminal beeps and siren blips</div>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="setting-sfx" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">CRT Scanline Filter</div>
+                    <div class="setting-desc">Retro phosphor monitor scanlines</div>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="setting-crt" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">Default Simulation Speed</div>
+                    <div class="setting-desc">Starting clock speed on shift start</div>
+                </div>
+                <select id="setting-speed" class="seed-input" style="width: auto; padding: 4px 8px;">
+                    <option value="1">1x (Normal)</option>
+                    <option value="2">2x (Fast)</option>
+                    <option value="5">5x (Turbo)</option>
+                </select>
+            </div>
+
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn" id="btn-save-settings">DONE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         MISSION BRIEFING MODAL
+         ========================================== -->
+    <div class="modal-backdrop hidden" id="briefing-modal">
+        <div class="modal-content" style="max-width: 580px;">
+            <div class="modal-header">
+                <h2>MISSION PROTOCOL: THE TIME LOOP</h2>
+                <button class="modal-close" id="btn-close-briefing">&times;</button>
+            </div>
+
+            <div style="font-size: 13px; line-height: 1.6; color: #cbd5e1; display: flex; flex-direction: column; gap: 12px;">
+                <p>
+                    <strong style="color: var(--accent-cyan);">1. The Repeating Hour:</strong> Every shift spans <strong>08:00 AM to 09:00 AM</strong>. On your first attempt, you will be overwhelmed. Memorize when and where incidents happen!
+                </p>
+                <p>
+                    <strong style="color: var(--accent-amber);">2. Direct Timeline Nudging:</strong> You possess <strong>3 Time Tokens</strong> per run. Drag incident cards left or right on the timeline to delay calls and buy your responders time.
+                </p>
+                <p>
+                    <strong style="color: var(--accent-red);">3. Causal Domino Cascades:</strong> Unresolved emergencies mutate. A kitchen fire left alone spreads to neighboring homes and knocks out power to traffic signals!
+                </p>
+                <p>
+                    <strong style="color: var(--accent-green);">4. Pre-Positioning:</strong> In later runs, dispatch units to key intersections <em>before</em> disasters strike.
+                </p>
+            </div>
+
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-primary" id="btn-briefing-ready">UNDERSTOOD, DISPATCHER</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         GAME PLAY SCREEN (HUD, Map & Timeline Dock)
+         ========================================== -->
+    <section class="screen hidden" id="game-screen" style="padding: 0;">
+        <div class="game-layout">
+            <!-- Game HUD -->
+            <div class="game-hud">
+                <div class="hud-left">
+                    <button class="btn" id="btn-pause-shift" style="padding: 6px 12px; font-size: 12px;">⏸ PAUSE</button>
+                    <div class="hud-clock" id="hud-clock">08:00:00 AM</div>
+                    <div class="hud-badges">
+                        <div class="hud-badge nudge">⏳ NUDGE TOKENS: <strong id="hud-tokens">3/3</strong></div>
+                        <div class="hud-badge">LOOP: <strong id="hud-loop">#1</strong></div>
+                    </div>
+                </div>
+
+                <div class="hud-badges">
+                    <div class="hud-badge">🚒 CASUALTIES: <strong id="hud-casualties" style="color: var(--accent-green);">0</strong></div>
+                    <div class="hud-badge">🔥 DAMAGE: <strong id="hud-damage" style="color: var(--accent-cyan);">$0</strong></div>
+                    <button class="btn" id="btn-exit-to-menu" style="padding: 6px 12px; font-size: 12px;">EXIT TO MENU</button>
+                </div>
+            </div>
+
+            <!-- Map Canvas Viewport (Phase 2 Canvas) -->
+            <div class="map-view-container">
+                <canvas id="map-canvas" width="800" height="480"></canvas>
+            </div>
+
+            <!-- Timeline Dock Placeholder (Phase 4 Track) -->
+            <div class="timeline-dock">
+                <div class="timeline-header">
+                    <span>INCIDENT TIMELINE TRACKER // 08:00 AM – 09:00 AM</span>
+                    <span>DRAG CARDS TO NUDGE TIMINGS (+/- 3 MIN)</span>
+                </div>
+                <div class="timeline-track-placeholder">
+                    [ PHASE 4: INTERACTIVE INCIDENT TIMELINE TRACK ]
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Game Scripts -->
+    <script src="src/audio.js"></script>
+    <script src="src/main.js"></script>
+</body>
+</html>
