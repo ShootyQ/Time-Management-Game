@@ -169,11 +169,19 @@ class GameApp {
         this.menuScreen.classList.add('hidden');
         this.gameScreen.classList.remove('hidden');
 
-        // Allow DOM to layout the container before calculating full-screen canvas dimensions
+        // Render immediately so seed 1042 shows up without any delay
+        if (this.world) {
+            this.world.resize();
+            this.world.generate(this.districtSeed);
+            this.world.render();
+        }
+
+        // Also run in next frame once layout settles
         requestAnimationFrame(() => {
             if (this.world) {
                 this.world.resize();
                 this.world.generate(this.districtSeed);
+                this.world.render();
             }
         });
 
