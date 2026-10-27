@@ -32,6 +32,7 @@ class VehicleManager {
         this.totalDamage = 0;
         this.totalCasualties = 0;
         this.globalCrashCooldown = 25.0; // 25s grace period at start of shift
+        this.erAdmissionTimer = 0;       // Visual celebration timer when MEDIC 2 delivers patient to ER
 
         this.sprites = {};
         this.loadSprites();
@@ -438,8 +439,51 @@ class VehicleManager {
         return this.dispatchUnit(this.selectedUnit, col, row, null);
     }
 
+    isUnitFreeForAutoDispatch(unit) {
+        if (!unit) return false;
+        return unit.inGarage || unit.status === UNIT_STATUS.IDLE_AT_BASE || unit.status === UNIT_STATUS.RETURNING;
+    }
+
+    tryAutoDispatchQueuedForUnit(unit) {
+        if (!unit || !this.isUnitFreeForAutoDispatch(unit)) return false;
+
+        // First check if TOW 5 has an active traffic collision waiting
+        if (unit.id === 'unit_tow' && this.collisions.length > 0) {
+            const crash = this.collisions[0];
+            return this.dispatchUnit(unit, crash.col, crash.row, null, false);
+        }
+
+        // Next check if TimelineManager has an ACTIVE unattended incident requiring this unit
+        if (window.timelineManager) {
+            const waitingInc = window.timelineManager.incidents.find(
+                inc => inc.state === 'ACTIVE' && inc.reqUnit === unit.id
+            );
+            if (waitingInc) {
+                if (waitingInc.lot && waitingInc.lot.facingRoad) {
+                    return this.dispatchUnit(unit, waitingInc.lot.facingRoad.col, waitingInc.lot.facingRoad.row, waitingInc.lot, false);
+                } else if (waitingInc.roadCol !== undefined) {
+                    return this.dispatchUnit(unit, waitingInc.roadCol, waitingInc.roadRow, null, false);
+                }
+            }
+        }
+        return false;
+    }
+
     returnUnitToBase(unit, isTowing = false, isErTransport = false) {
         if (!unit || unit.inGarage) return false;
+        // If not towing or transporting a patient, check if another active call for this unit is already waiting!
+        if (!isTowing && !isErTransport && window.timelineManager) {
+            const waitingInc = window.timelineManager.incidents.find(
+                inc => inc.state === 'ACTIVE' && inc.reqUnit === unit.id
+            );
+            if (waitingInc) {
+                if (waitingInc.lot && waitingInc.lot.facingRoad) {
+                    return this.dispatchUnit(unit, waitingInc.lot.facingRoad.col, waitingInc.lot.facingRoad.row, waitingInc.lot, false);
+                } else if (waitingInc.roadCol !== undefined) {
+                    return this.dispatchUnit(unit, waitingInc.roadCol, waitingInc.roadRow, null, false);
+                }
+            }
+        }
         const ok = this.dispatchUnit(unit, unit.homeCol, unit.homeRow, unit.homeLot, true);
         if (ok) {
             unit.status = isTowing ? UNIT_STATUS.TOWING : (isErTransport ? UNIT_STATUS.ER_TRANSPORT : UNIT_STATUS.RETURNING);
@@ -520,6 +564,9 @@ class VehicleManager {
         if (this.globalCrashCooldown > 0) {
             this.globalCrashCooldown -= dt;
         }
+        if (this.erAdmissionTimer > 0) {
+            this.erAdmissionTimer = Math.max(0, this.erAdmissionTimer - dt);
+        }
 
         // 1. Update Emergency Responders (including Garage Exit / Enter animations)
         for (const unit of this.responders) {
@@ -558,13 +605,28 @@ class VehicleManager {
                 );
 
                 if (unit.bayProgress >= 1.0) {
+                    const wasErTransport = unit.status === UNIT_STATUS.ER_TRANSPORT;
                     unit.bayMode = null;
                     unit.bayProgress = 0;
                     unit.inGarage = true;
                     unit.towedSpriteKey = null; // Wreck delivered inside Mechanic Shop!
                     unit.status = UNIT_STATUS.IDLE_AT_BASE;
                     unit.sirenActive = false;
+
+                    if (wasErTransport) {
+                        this.erAdmissionTimer = 3.8;
+                        if (window.timelineManager) {
+                            window.timelineManager.showAlertBanner(
+                                '🏥 COUNTY GENERAL ER: Patient admitted to Trauma Bay — Life Saved!',
+                                '#10b981',
+                                3200
+                            );
+                        }
+                    }
+
                     this.syncHUD();
+                    // Check if another active incident is queued for this unit!
+                    this.tryAutoDispatchQueuedForUnit(unit);
                 }
                 continue;
             }
@@ -586,7 +648,7 @@ class VehicleManager {
                         this.updateHeadingFromStep(unit, unit.col, unit.row, unit.path[0].col, unit.path[0].row);
                     } else {
                         unit.progress = 0;
-                        if (unit.status === UNIT_STATUS.RETURNING || unit.status === UNIT_STATUS.TOWING) {
+                        if (unit.status === UNIT_STATUS.RETURNING || unit.status === UNIT_STATUS.TOWING || unit.status === UNIT_STATUS.ER_TRANSPORT) {
                             unit.bayMode = 'ENTERING';
                             unit.bayProgress = 0;
                             unit.sirenActive = false;
@@ -772,6 +834,12 @@ class VehicleManager {
             clearProgress: 0,
             clearDuration: 3.0
         });
+
+        // Auto-dispatch TOW 5 [5] if available!
+        const towUnit = this.responders.find(u => u.id === 'unit_tow');
+        if (towUnit && this.isUnitFreeForAutoDispatch(towUnit)) {
+            this.dispatchUnit(towUnit, col, row, null, false);
+        }
     }
 
     updateCollisions(dt) {
@@ -1037,6 +1105,71 @@ class VehicleManager {
 
             this.renderUnitCallsign(ctx, pos.x, pos.y - Math.floor(s * 0.36), unit, isSelected);
         }
+
+        // 5. Render Hospital ER Trauma Bay Reception & Patient Admission Animation
+        this.renderHospitalERAnimation(ctx, s, nowMs);
+    }
+
+    renderHospitalERAnimation(ctx, s, nowMs) {
+        const medicUnit = this.responders.find(u => u.id === 'unit_medic');
+        if (!medicUnit || !medicUnit.homeLot) return;
+
+        const isTransporting = !medicUnit.inGarage && medicUnit.status === UNIT_STATUS.ER_TRANSPORT;
+        if (!isTransporting && this.erAdmissionTimer <= 0) return;
+
+        const lot = medicUnit.homeLot;
+        const x = this.world.offsetX + lot.col * s;
+        const y = this.world.offsetY + lot.row * s;
+        const w = (lot.w || 1) * s;
+        const h = (lot.h || 1) * s;
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+
+        ctx.save();
+        if (isTransporting) {
+            // Pulsing ER Trauma Bay beacon while Ambulance is inbound with patient
+            const pulse = 0.5 + 0.45 * Math.sin(nowMs / 120);
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([6, 4]);
+            ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = `rgba(16, 185, 129, ${0.28 * pulse})`;
+            ctx.beginPath();
+            ctx.arc(cx, cy, s * 0.55, 0, Math.PI * 2);
+            ctx.fill();
+
+            const tag = '🏥 ER BAY RECEIVING PATIENT';
+            ctx.font = 'bold 12px monospace';
+            const tw = Math.ceil(ctx.measureText(tag).width + 16);
+            ctx.fillStyle = 'rgba(6, 78, 59, 0.96)';
+            ctx.fillRect(cx - tw / 2, y - 24, tw, 20);
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(cx - tw / 2, y - 24, tw, 20);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(tag, cx - tw / 2 + 6, y - 10);
+        } else if (this.erAdmissionTimer > 0) {
+            // Celebratory floating "+1 PATIENT ADMITTED TO ER!" animation
+            const rise = (3.8 - this.erAdmissionTimer) * 14;
+            ctx.strokeStyle = '#34d399';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+
+            const tag = '🏥 +1 PATIENT SAVED AT ER! 💚';
+            ctx.font = 'bold 13px monospace';
+            const tw = Math.ceil(ctx.measureText(tag).width + 18);
+            const by = y - 18 - rise;
+            ctx.fillStyle = 'rgba(6, 78, 59, 0.98)';
+            ctx.fillRect(cx - tw / 2, by, tw, 22);
+            ctx.strokeStyle = '#6ee7b7';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(cx - tw / 2, by, tw, 22);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(tag, cx - tw / 2 + 7, by + 15);
+        }
+        ctx.restore();
     }
 
     renderCollisions(ctx, s, nowMs, civDrawSize) {

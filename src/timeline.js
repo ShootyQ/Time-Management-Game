@@ -1,22 +1,12 @@
 // ========================================================
-// CHRONOS DISPATCH - Phase 4 & 5: Timeline System, Causal Domino Cascades & Nudging
-// Features:
-// 1. Deterministic Seeded 08:00 AM - 09:00 AM Incident Schedule:
-//    - Fires, Medical Calls, Bank Robberies, Chemical Leaks, School Surge, Pileups
-// 2. Interactive 2-Row Staggered Bottom Timeline Track with Live Playhead Cursor:
-//    - Large, bold 13px cards staggered across 2 rows so cards NEVER overlap
-//    - Click any incident pill on the timeline to inspect & auto-dispatch best unit
-//    - Drag incident pills left/right OR click ◀ / ▶ buttons using Nudge Tokens!
-// 3. Causal Domino Cascades ("The Butterfly Effect"):
-//    - Unresolved root emergencies spawn secondary Domino Disasters!
-//    - Resolving root emergencies snuffs out the future Domino branch & awards Prevented score!
-// 4. Ambulance ER Patient Transport:
-//    - Resolving medical calls with MEDIC 2 automatically transports patient to County General ER!
+// CHRONOS DISPATCH - Phase 4, 5 & 6: Auto-Response, Early-Warning Radar,
+// Risky Time-Shifting, Causal Domino Cascades & 16-Bit Incident Animations
 // ========================================================
 
 const INCIDENT_STATE = {
-    SCHEDULED: 'SCHEDULED',
-    ACTIVE: 'ACTIVE',
+    HIDDEN: 'HIDDEN',       // Unknown until 6 in-game minutes before trigger!
+    INCOMING: 'INCOMING',   // Early-Warning Radar window (can be nudged/moved to another time!)
+    ACTIVE: 'ACTIVE',       // Emergency in progress — units AUTO-DISPATCH if available!
     RESOLVED: 'RESOLVED',
     FAILED: 'FAILED'
 };
@@ -29,9 +19,31 @@ class TimelineManager {
         this.dominoesPrevented = 0;
         this.bannerTimer = null;
 
+        // Track incidents discovered across loops for the same seed
+        this.discoveredBySeed = {};
+
         this.draggingInc = null;
         this.dragMoved = false;
+
+        this.fxSprites = {};
+        this.loadFxSprites();
         this.initDragHandlers();
+    }
+
+    loadFxSprites() {
+        const files = [
+            'fx_fire_1', 'fx_fire_2', 'fx_fire_3',
+            'fx_police_1', 'fx_police_2',
+            'fx_medical_1', 'fx_medical_2',
+            'fx_hazmat_1', 'fx_hazmat_2'
+        ];
+        for (const name of files) {
+            const img = new Image();
+            img.src = `assets/fx/${name}.png`;
+            img.onload = () => {
+                this.fxSprites[name] = img;
+            };
+        }
     }
 
     initForWorld(world, seed) {
@@ -40,6 +52,9 @@ class TimelineManager {
         this.prng = new PRNG(seed + 404);
         this.incidents = [];
         this.dominoesPrevented = 0;
+        if (!this.discoveredBySeed[seed]) {
+            this.discoveredBySeed[seed] = new Set();
+        }
         this.updatePreventedHUD();
 
         this.generateSchedule();
@@ -81,8 +96,8 @@ class TimelineManager {
         const gas = findLot(LOT_TYPE.COMMERCIAL_GAS) || pickHouse(5);
         const houseA = pickHouse(this.prng.range(0, Math.max(1, houses.length - 1)));
         const houseB = pickHouse(this.prng.range(0, Math.max(1, houses.length - 1)) + 3);
+        const houseC = pickHouse(this.prng.range(0, Math.max(1, houses.length - 1)) + 6);
 
-        // Pick intersections for scheduled pileup & domino cascades
         const intersections = this.world.roadNodes.filter(n => {
             const rt = this.world.grid[n.row][n.col].roadType;
             return rt === '4WAY' || (rt && rt.startsWith('3WAY'));
@@ -94,76 +109,99 @@ class TimelineManager {
             ? intersections[(this.prng.range(0, intersections.length - 1) + 1) % intersections.length]
             : crashNode;
 
+        // 9 Seeded Emergencies across 08:00 - 09:00 AM
+        // Notice: Moving an early event forward can easily collide with a hidden later event of the same unit!
         const rawDefs = [
             {
                 id: 'inc_1',
                 minuteOffset: 4,
-                title: 'Grease Fryer Fire',
+                title: 'House Kitchen Fire',
                 icon: '🔥',
+                fxType: 'FIRE',
+                color: '#ef4444',
+                reqUnit: 'unit_fire',
+                reqLabel: 'ENGINE 4 [1]',
+                lot: houseA,
+                immovable: false,
+                durationSec: 46,
+                damagePenalty: 3500
+            },
+            {
+                id: 'inc_2',
+                minuteOffset: 9,
+                title: 'Diner Fryer Blaze',
+                icon: '🔥',
+                fxType: 'FIRE',
                 color: '#ef4444',
                 reqUnit: 'unit_fire',
                 reqLabel: 'ENGINE 4 [1]',
                 lot: diner,
                 immovable: false,
-                durationSec: 45,
-                damagePenalty: 3500,
+                durationSec: 48,
+                damagePenalty: 4000,
                 dominoSpec: {
                     id: 'dom_1',
                     delayMinutes: 4,
-                    title: 'Grid Blackout Blaze',
+                    title: 'Grid Blackout Fire',
                     icon: '⚡',
+                    fxType: 'FIRE',
                     color: '#ef4444',
                     reqUnit: 'unit_fire',
                     reqLabel: 'ENGINE 4 [1]',
-                    lot: houseB,
+                    lot: houseC,
                     durationSec: 45,
                     damagePenalty: 4500
                 }
             },
             {
-                id: 'inc_2',
-                minuteOffset: 12,
-                title: 'Cardiac Distress',
+                id: 'inc_3',
+                minuteOffset: 15,
+                title: 'Cardiac Emergency',
                 icon: '🚑',
+                fxType: 'MEDICAL',
                 color: '#10b981',
                 reqUnit: 'unit_medic',
                 reqLabel: 'MEDIC 2 [3]',
-                lot: houseA,
+                lot: houseB,
                 immovable: false,
-                durationSec: 50,
+                durationSec: 52,
                 damagePenalty: 2500,
                 requiresErTransport: true
             },
             {
-                id: 'inc_3',
-                minuteOffset: 20,
+                id: 'inc_4',
+                minuteOffset: 21,
                 title: 'School Bell Surge',
                 icon: '🏫',
+                fxType: 'POLICE',
                 color: '#f59e0b',
                 reqUnit: 'unit_police',
                 reqLabel: 'UNIT 101 [2]',
                 lot: school,
-                immovable: true, // Fixed bell schedule!
-                durationSec: 45,
+                immovable: true, // Fixed public schedule — always known!
+                alwaysKnown: true,
+                durationSec: 46,
                 damagePenalty: 2000
             },
             {
-                id: 'inc_4',
-                minuteOffset: 28,
-                title: 'Silent Bank Alarm',
+                id: 'inc_5',
+                minuteOffset: 26,
+                title: 'Armed Bank Heist',
                 icon: '🚓',
+                fxType: 'POLICE',
                 color: '#3b82f6',
                 reqUnit: 'unit_police',
                 reqLabel: 'UNIT 101 [2]',
                 lot: bank,
                 immovable: false,
-                durationSec: 45,
+                durationSec: 48,
                 damagePenalty: 5000,
                 dominoSpec: {
                     id: 'dom_2',
                     delayMinutes: 4,
                     title: 'Getaway Chase Wreck',
                     icon: '💥',
+                    fxType: 'POLICE',
                     color: '#f97316',
                     reqUnit: 'unit_tow',
                     reqLabel: 'TOW 5 [5]',
@@ -175,10 +213,26 @@ class TimelineManager {
                 }
             },
             {
-                id: 'inc_5',
-                minuteOffset: 36,
+                id: 'inc_6',
+                minuteOffset: 33,
+                title: 'Collapse at Market',
+                icon: '🚑',
+                fxType: 'MEDICAL',
+                color: '#10b981',
+                reqUnit: 'unit_medic',
+                reqLabel: 'MEDIC 2 [3]',
+                lot: supermarket,
+                immovable: false,
+                durationSec: 50,
+                damagePenalty: 3000,
+                requiresErTransport: true
+            },
+            {
+                id: 'inc_7',
+                minuteOffset: 39,
                 title: 'Intersection Pileup',
                 icon: '💥',
+                fxType: 'CRASH',
                 color: '#f97316',
                 reqUnit: 'unit_tow',
                 reqLabel: 'TOW 5 [5]',
@@ -186,26 +240,28 @@ class TimelineManager {
                 roadCol: crashNode.col,
                 roadRow: crashNode.row,
                 immovable: false,
-                durationSec: 50,
+                durationSec: 52,
                 damagePenalty: 2500
             },
             {
-                id: 'inc_6',
-                minuteOffset: 44,
+                id: 'inc_8',
+                minuteOffset: 45,
                 title: 'Chemical Drum Leak',
                 icon: '⚠️',
+                fxType: 'HAZMAT',
                 color: '#eab308',
                 reqUnit: 'unit_chief',
                 reqLabel: 'CHIEF 1 [4]',
                 lot: warehouse,
                 immovable: false,
-                durationSec: 45,
+                durationSec: 48,
                 damagePenalty: 4500,
                 dominoSpec: {
                     id: 'dom_3',
                     delayMinutes: 4,
-                    title: 'Hazmat Vapor Fire',
+                    title: 'Hazmat Vapor Blaze',
                     icon: '☣️',
+                    fxType: 'FIRE',
                     color: '#ef4444',
                     reqUnit: 'unit_fire',
                     reqLabel: 'ENGINE 4 [1]',
@@ -215,31 +271,41 @@ class TimelineManager {
                 }
             },
             {
-                id: 'inc_7',
-                minuteOffset: 52,
-                title: 'Fuel Pump Blaze',
+                id: 'inc_9',
+                minuteOffset: 51,
+                title: 'Fuel Pump Inferno',
                 icon: '🔥',
+                fxType: 'FIRE',
                 color: '#ef4444',
                 reqUnit: 'unit_fire',
                 reqLabel: 'ENGINE 4 [1]',
                 lot: gas,
                 immovable: false,
-                durationSec: 45,
+                durationSec: 46,
                 damagePenalty: 6000
             }
         ];
 
-        this.incidents = rawDefs.map(d => ({
-            ...d,
-            baseMinute: d.minuteOffset,
-            currentMinute: d.minuteOffset,
-            nudged: false,
-            isDomino: false,
-            state: INCIDENT_STATE.SCHEDULED,
-            elapsedActiveSec: 0,
-            resolveProgress: 0,
-            resolveDuration: 3.5
-        }));
+        const knownSet = this.discoveredBySeed[this.seed] || new Set();
+
+        this.incidents = rawDefs.map(d => {
+            // Revealed if within first 6 minutes of 08:00 AM, or fixed public schedule, or remembered from prior loop!
+            const isKnown = d.minuteOffset <= 6 || d.alwaysKnown || knownSet.has(d.id);
+            if (isKnown) knownSet.add(d.id);
+
+            return {
+                ...d,
+                baseMinute: d.minuteOffset,
+                currentMinute: d.minuteOffset,
+                nudged: false,
+                isDomino: false,
+                rememberedFromPriorLoop: knownSet.has(d.id) && d.minuteOffset > 6 && !d.alwaysKnown,
+                state: isKnown ? INCIDENT_STATE.INCOMING : INCIDENT_STATE.HIDDEN,
+                elapsedActiveSec: 0,
+                resolveProgress: 0,
+                resolveDuration: 4.0
+            };
+        });
     }
 
     formatMinute(min) {
@@ -247,9 +313,11 @@ class TimelineManager {
         return `08:${String(clamped).padStart(2, '0')}`;
     }
 
-    // Spend 1 Nudge Token to shift an incident earlier or later by deltaMinutes (or to targetMinute)
+    // Spend 1 Nudge Token to shift an INCOMING incident to another time!
+    // Risk: Because future HIDDEN incidents aren't revealed until 6m before they happen,
+    // delaying an incident can land it right on top of another hidden call for the same unit!
     nudgeIncidentToMinute(inc, targetMinute) {
-        if (!inc || inc.immovable || inc.state !== INCIDENT_STATE.SCHEDULED) return false;
+        if (!inc || inc.immovable || inc.state !== INCIDENT_STATE.INCOMING) return false;
         const app = window.gameApp;
         if (!app) return false;
 
@@ -271,11 +339,36 @@ class TimelineManager {
 
         inc.currentMinute = newMin;
         if (window.soundManager) window.soundManager.playSelect();
-        this.showAlertBanner(
-            `⏳ TIMELINE NUDGED: "${inc.title}" shifted to ${this.formatMinute(inc.currentMinute)} AM`,
-            '#f59e0b',
-            2600
+
+        // Check if moving it to newMin puts it dangerously close (within 5 mins) to a HIDDEN or INCOMING call for the same unit!
+        const collisionRisk = this.incidents.find(other =>
+            other !== inc &&
+            other.reqUnit === inc.reqUnit &&
+            other.state !== INCIDENT_STATE.RESOLVED &&
+            other.state !== INCIDENT_STATE.FAILED &&
+            Math.abs(other.currentMinute - newMin) <= 5
         );
+
+        if (collisionRisk && collisionRisk.state === INCIDENT_STATE.HIDDEN) {
+            this.showAlertBanner(
+                `⏳ MOVED "${inc.title}" to ${this.formatMinute(newMin)} AM — ⚠️ DANGER: Unknown future timeline slot!`,
+                '#f59e0b',
+                3500
+            );
+        } else if (collisionRisk) {
+            this.showAlertBanner(
+                `⚠️ OVERLAP WARNING! "${inc.title}" at ${this.formatMinute(newMin)} clashes with "${collisionRisk.title}" (${inc.reqLabel})!`,
+                '#ef4444',
+                3800
+            );
+        } else {
+            this.showAlertBanner(
+                `⏳ TIMELINE NUDGED: "${inc.title}" rescheduled to ${this.formatMinute(inc.currentMinute)} AM`,
+                '#38bdf8',
+                2800
+            );
+        }
+
         this.renderTimelineDOM();
         return true;
     }
@@ -316,10 +409,29 @@ class TimelineManager {
 
         const dt = Math.min(0.1, dtSeconds) * simSpeed;
         const currentShiftMin = (inGameSeconds - 8 * 3600) / 60;
+        let domNeedsUpdate = false;
 
         for (const inc of this.incidents) {
-            if (inc.state === INCIDENT_STATE.SCHEDULED && currentShiftMin >= inc.currentMinute) {
+            // 1. Reveal HIDDEN incidents 6 in-game minutes right before they happen!
+            if (inc.state === INCIDENT_STATE.HIDDEN && currentShiftMin >= inc.currentMinute - 6) {
+                inc.state = INCIDENT_STATE.INCOMING;
+                if (this.discoveredBySeed[this.seed]) {
+                    this.discoveredBySeed[this.seed].add(inc.id);
+                }
+                const locName = inc.lot ? inc.lot.name : `Intersection (${inc.roadCol}, ${inc.roadRow})`;
+                this.showAlertBanner(
+                    `📡 INCOMING CALL IN 6m (${this.formatMinute(inc.currentMinute)}): ${inc.icon} ${inc.title} at ${locName} — Nudge/Drag to Delay!`,
+                    '#38bdf8',
+                    4200
+                );
+                if (window.soundManager) window.soundManager.playClick();
+                domNeedsUpdate = true;
+            }
+
+            // 2. Activate INCOMING incidents when the clock reaches their currentMinute -> AUTO-DISPATCH!
+            if (inc.state === INCIDENT_STATE.INCOMING && currentShiftMin >= inc.currentMinute) {
                 this.activateIncident(inc);
+                domNeedsUpdate = true;
             } else if (inc.state === INCIDENT_STATE.ACTIVE) {
                 inc.elapsedActiveSec += dt;
 
@@ -328,6 +440,12 @@ class TimelineManager {
                 if (vm) {
                     const targetC = inc.lot && inc.lot.facingRoad ? inc.lot.facingRoad.col : inc.roadCol;
                     const targetR = inc.lot && inc.lot.facingRoad ? inc.lot.facingRoad.row : inc.roadRow;
+
+                    // If the required unit just became free in garage/returning while this incident is still unattended, auto-dispatch it!
+                    const reqResponder = vm.responders.find(u => u.id === inc.reqUnit);
+                    if (reqResponder && vm.isUnitFreeForAutoDispatch(reqResponder)) {
+                        this.autoDispatchResponderToIncident(inc);
+                    }
 
                     const unitOnScene = vm.responders.find(u =>
                         !u.inGarage &&
@@ -339,38 +457,78 @@ class TimelineManager {
                     if (unitOnScene) {
                         unitOnScene.status = 'ON SCENE';
                         unitOnScene.sirenActive = true;
-                        const bonus = unitOnScene.id === inc.reqUnit ? 1.45 : 0.9;
+                        inc.responderUnit = unitOnScene;
+                        const bonus = unitOnScene.id === inc.reqUnit ? 1.4 : 0.85;
                         inc.resolveProgress += (dt * bonus) / inc.resolveDuration;
 
                         if (inc.resolveProgress >= 1.0) {
                             this.resolveIncident(inc, unitOnScene);
+                            domNeedsUpdate = true;
                             continue;
                         }
+                    } else {
+                        inc.responderUnit = null;
                     }
                 }
 
                 // Check if incident timer expired (Domino Cascade Failure!)
                 if (inc.elapsedActiveSec >= inc.durationSec) {
                     this.failIncident(inc, currentShiftMin);
+                    domNeedsUpdate = true;
                 }
             }
         }
+
+        if (domNeedsUpdate) {
+            this.renderTimelineDOM();
+        }
+    }
+
+    autoDispatchResponderToIncident(inc) {
+        if (!this.world || !this.world.vehicleManager) return false;
+        const vm = this.world.vehicleManager;
+        const unit = vm.responders.find(u => u.id === inc.reqUnit);
+        if (!unit) return false;
+
+        if (vm.isUnitFreeForAutoDispatch(unit)) {
+            if (inc.lot && inc.lot.facingRoad) {
+                return vm.dispatchUnit(unit, inc.lot.facingRoad.col, inc.lot.facingRoad.row, inc.lot, false);
+            } else if (inc.roadCol !== undefined) {
+                return vm.dispatchUnit(unit, inc.roadCol, inc.roadRow, null, false);
+            }
+        }
+        return false;
     }
 
     activateIncident(inc) {
         inc.state = INCIDENT_STATE.ACTIVE;
+        if (this.discoveredBySeed[this.seed]) {
+            this.discoveredBySeed[this.seed].add(inc.id);
+        }
+
         if (inc.lot) {
             inc.lot.onFire = true;
         } else if (inc.roadCol !== undefined && this.world.vehicleManager) {
             this.world.vehicleManager.triggerScheduledCollisionAt(inc.roadCol, inc.roadRow);
         }
 
+        // Attempt AUTO-DISPATCH of the required responder!
+        const dispatched = this.autoDispatchResponderToIncident(inc);
         const locName = inc.lot ? inc.lot.name : `Intersection (${inc.roadCol}, ${inc.roadRow})`;
-        this.showAlertBanner(
-            `🚨 DISPATCH ALERT: ${inc.icon} ${inc.title} at ${locName} — Send ${inc.reqLabel}!`,
-            inc.color,
-            4000
-        );
+
+        if (dispatched) {
+            this.showAlertBanner(
+                `🚨 AUTO-DISPATCH: ${inc.reqLabel} responding to ${inc.icon} ${inc.title} at ${locName}!`,
+                inc.color,
+                4000
+            );
+        } else {
+            this.showAlertBanner(
+                `⚠️ UNIT BUSY / OVERBOOKED! ${inc.reqLabel} tied up — ${inc.icon} "${inc.title}" at ${locName} is UNATTENDED!`,
+                '#ef4444',
+                5000
+            );
+        }
 
         if (window.soundManager) {
             window.soundManager.playSirenBlip();
@@ -380,9 +538,9 @@ class TimelineManager {
 
     resolveIncident(inc, unitOnScene) {
         inc.state = INCIDENT_STATE.RESOLVED;
+        inc.responderUnit = null;
         if (inc.lot) inc.lot.onFire = false;
 
-        // If this root incident had a Domino Cascade risk, preventing it awards a Domino Prevented bonus!
         if (inc.dominoSpec) {
             this.dominoesPrevented += 1;
             this.updatePreventedHUD();
@@ -399,14 +557,15 @@ class TimelineManager {
             );
         }
 
-        // If this was a medical call and MEDIC 2 is on scene, automatically transport patient to County General ER!
+        // Auto-return or ER patient transport after resolving!
         const vm = this.world.vehicleManager;
-        if (vm && (inc.requiresErTransport || unitOnScene.id === 'unit_medic')) {
-            const medicUnit = unitOnScene.id === 'unit_medic'
-                ? unitOnScene
-                : vm.responders.find(u => u.id === 'unit_medic');
-            if (medicUnit && !medicUnit.inGarage) {
-                vm.returnUnitToBase(medicUnit, false, true);
+        if (vm) {
+            if (inc.requiresErTransport || unitOnScene.id === 'unit_medic') {
+                // MEDIC 2 transports patient to County General Hospital ER!
+                vm.returnUnitToBase(unitOnScene, false, true);
+            } else {
+                // Fire, Police, Chief automatically check for another active call or return to station bay!
+                vm.returnUnitToBase(unitOnScene, false, false);
             }
         }
 
@@ -416,6 +575,7 @@ class TimelineManager {
 
     failIncident(inc, currentShiftMin) {
         inc.state = INCIDENT_STATE.FAILED;
+        inc.responderUnit = null;
         if (inc.lot) inc.lot.onFire = false;
 
         const vm = this.world.vehicleManager;
@@ -425,7 +585,6 @@ class TimelineManager {
             vm.updateDamageHUD();
         }
 
-        // Trigger Causal Domino Cascade if this root incident had a dominoSpec!
         if (inc.dominoSpec) {
             const spec = inc.dominoSpec;
             const spawnMin = Math.min(58, Math.ceil(currentShiftMin) + 1);
@@ -436,6 +595,7 @@ class TimelineManager {
                 currentMinute: spawnMin,
                 title: spec.title,
                 icon: spec.icon,
+                fxType: spec.fxType || 'FIRE',
                 color: spec.color,
                 reqUnit: spec.reqUnit,
                 reqLabel: spec.reqLabel,
@@ -447,10 +607,10 @@ class TimelineManager {
                 nudged: false,
                 durationSec: spec.durationSec || 45,
                 damagePenalty: spec.damagePenalty || 4000,
-                state: INCIDENT_STATE.SCHEDULED,
+                state: INCIDENT_STATE.INCOMING,
                 elapsedActiveSec: 0,
                 resolveProgress: 0,
-                resolveDuration: 3.5
+                resolveDuration: 4.0
             };
             this.incidents.push(dominoInc);
             this.activateIncident(dominoInc);
@@ -471,13 +631,51 @@ class TimelineManager {
         this.renderTimelineDOM();
     }
 
-    // Render active incident hazards on lots on the main canvas with large readable callouts
+    // ========================================================
+    // RICH 16-BIT PIXEL ART VISUALS & ANIMATIONS FOR FIRES, POLICE, MEDICAL & HAZMAT
+    // ========================================================
     renderMapIncidents(ctx) {
         if (!this.world) return;
         const s = this.world.cellSize;
         const nowMs = performance.now();
 
         for (const inc of this.incidents) {
+            // 1. Render Early-Warning Radar Ring on buildings with an INCOMING alert within 6 minutes
+            if (inc.state === INCIDENT_STATE.INCOMING && inc.lot && !inc.alwaysKnown) {
+                const app = window.gameApp;
+                const currentShiftMin = app ? (app.inGameSeconds - 8 * 3600) / 60 : 0;
+                const minsUntil = Math.max(0, Math.ceil(inc.currentMinute - currentShiftMin));
+                if (minsUntil <= 6) {
+                    const lot = inc.lot;
+                    const x = this.world.offsetX + lot.col * s;
+                    const y = this.world.offsetY + lot.row * s;
+                    const w = (lot.w || 1) * s;
+                    const h = (lot.h || 1) * s;
+                    const cx = x + w / 2;
+
+                    ctx.save();
+                    ctx.strokeStyle = '#38bdf8';
+                    ctx.lineWidth = 2.5;
+                    ctx.setLineDash([6, 4]);
+                    ctx.lineDashOffset = -Math.floor(nowMs / 40);
+                    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+                    ctx.setLineDash([]);
+
+                    const tag = `📡 IN ${minsUntil}m: ${inc.icon} DRAG TIMELINE`;
+                    ctx.font = 'bold 11px monospace';
+                    const tw = Math.ceil(ctx.measureText(tag).width + 14);
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+                    ctx.fillRect(cx - tw / 2, y - 22, tw, 18);
+                    ctx.strokeStyle = '#38bdf8';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(cx - tw / 2, y - 22, tw, 18);
+                    ctx.fillStyle = '#38bdf8';
+                    ctx.fillText(tag, cx - tw / 2 + 6, y - 9);
+                    ctx.restore();
+                }
+                continue;
+            }
+
             if (inc.state !== INCIDENT_STATE.ACTIVE || !inc.lot) continue;
 
             const lot = inc.lot;
@@ -489,21 +687,20 @@ class TimelineManager {
             const cy = y + h / 2;
 
             ctx.save();
-            // Pulsing emergency border around the lot
-            const pulse = 0.5 + 0.4 * Math.sin(nowMs / 110);
-            ctx.strokeStyle = inc.color;
-            ctx.lineWidth = 3.5;
-            ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
 
-            // Animated rising smoke & hazard glow
-            const smokeY = (nowMs / 22) % 18;
-            ctx.fillStyle = `rgba(15, 23, 42, ${0.78 * pulse})`;
-            ctx.beginPath();
-            ctx.arc(cx, cy - 6 - smokeY, 9 + smokeY * 0.35, 0, Math.PI * 2);
-            ctx.fill();
+            // 2. Type-Specific Visuals & 16-Bit Sprite Animations!
+            if (inc.fxType === 'FIRE') {
+                this.renderFireIncidentFX(ctx, inc, x, y, w, h, cx, cy, s, nowMs);
+            } else if (inc.fxType === 'POLICE') {
+                this.renderPoliceIncidentFX(ctx, inc, x, y, w, h, cx, cy, s, nowMs);
+            } else if (inc.fxType === 'MEDICAL') {
+                this.renderMedicalIncidentFX(ctx, inc, x, y, w, h, cx, cy, s, nowMs);
+            } else {
+                this.renderHazmatIncidentFX(ctx, inc, x, y, w, h, cx, cy, s, nowMs);
+            }
 
-            // Countdown bar / Resolve bar above the lot
-            const bw = Math.max(76, w - 4);
+            // 3. Countdown bar / Resolve bar above the lot
+            const bw = Math.max(78, w - 4);
             const bh = 10;
             const bx = cx - bw / 2;
             const by = y - 12;
@@ -523,19 +720,212 @@ class TimelineManager {
             ctx.lineWidth = 1.5;
             ctx.strokeRect(bx, by, bw, bh);
 
-            // Large High-Contrast Callout Pill
-            const tag = `${inc.icon} ${inc.reqLabel}`;
+            // 4. High-Contrast Callout Pill
+            const statusText = inc.responderUnit ? `🛠️ ${inc.responderUnit.callsign}` : `${inc.icon} ${inc.reqLabel}`;
             ctx.font = 'bold 12px monospace';
-            const tw = Math.ceil(ctx.measureText(tag).width + 16);
+            const tw = Math.ceil(ctx.measureText(statusText).width + 16);
             const th = 20;
             ctx.fillStyle = 'rgba(11, 17, 32, 0.96)';
             ctx.fillRect(cx - tw / 2, by - th - 2, tw, th);
-            ctx.strokeStyle = inc.color;
+            ctx.strokeStyle = inc.responderUnit ? '#10b981' : inc.color;
             ctx.lineWidth = 2;
             ctx.strokeRect(cx - tw / 2, by - th - 2, tw, th);
             ctx.fillStyle = '#ffffff';
-            ctx.fillText(tag, cx - tw / 2 + 6, by - 7);
+            ctx.fillText(statusText, cx - tw / 2 + 6, by - 7);
 
+            ctx.restore();
+        }
+    }
+
+    renderFireIncidentFX(ctx, inc, x, y, w, h, cx, cy, s, nowMs) {
+        const pulse = 0.55 + 0.4 * Math.sin(nowMs / 95);
+        // Fiery orange-red heat glow around structure
+        ctx.fillStyle = `rgba(239, 68, 68, ${0.28 * pulse})`;
+        ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+        ctx.strokeStyle = Math.floor(nowMs / 110) % 2 === 0 ? '#ef4444' : '#f97316';
+        ctx.lineWidth = 3.5;
+        ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+
+        // Billowing dark smoke plumes rising from roof
+        for (let i = 0; i < 3; i++) {
+            const cycle = ((nowMs / 18) + i * 11) % 32;
+            const sx = cx + Math.sin(nowMs / 200 + i * 2) * (w * 0.22);
+            const sy = cy - 4 - cycle;
+            const sr = 6 + cycle * 0.28;
+            ctx.fillStyle = `rgba(30, 41, 59, ${Math.max(0.1, 0.78 - cycle / 36)})`;
+            ctx.beginPath();
+            ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Draw multi-frame 16-bit pixel art Fire Sprites across the roof/windows
+        const frameIdx = (Math.floor(nowMs / 110) % 3) + 1;
+        const fireSprite = this.fxSprites[`fx_fire_${frameIdx}`];
+        const flameSize = Math.floor(s * 0.68);
+        if (fireSprite && fireSprite.complete) {
+            ctx.drawImage(fireSprite, cx - flameSize / 2, cy - flameSize / 2, flameSize, flameSize);
+            if (w > s * 1.2) {
+                const frameIdx2 = ((frameIdx) % 3) + 1;
+                const fireSprite2 = this.fxSprites[`fx_fire_${frameIdx2}`] || fireSprite;
+                ctx.drawImage(fireSprite2, cx - w * 0.26 - flameSize / 2, cy - flameSize * 0.4, flameSize * 0.85, flameSize * 0.85);
+                ctx.drawImage(fireSprite2, cx + w * 0.24 - flameSize / 2, cy - flameSize * 0.35, flameSize * 0.85, flameSize * 0.85);
+            }
+        }
+
+        // Active Fire Engine High-Pressure Water Cannon Stream when Responder is ON SCENE!
+        if (inc.responderUnit && this.world.vehicleManager) {
+            const unitPos = this.world.vehicleManager.getVehicleWorldXY(inc.responderUnit, true);
+            ctx.save();
+            // Outer cyan water stream
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 5;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(unitPos.x, unitPos.y);
+            ctx.quadraticCurveTo((unitPos.x + cx) / 2, Math.min(unitPos.y, cy) - 18, cx, cy);
+            ctx.stroke();
+
+            // Inner white pressurized water core
+            ctx.strokeStyle = '#e0f2fe';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([6, 4]);
+            ctx.lineDashOffset = -Math.floor(nowMs / 20);
+            ctx.beginPath();
+            ctx.moveTo(unitPos.x, unitPos.y);
+            ctx.quadraticCurveTo((unitPos.x + cx) / 2, Math.min(unitPos.y, cy) - 18, cx, cy);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Water splash & white steam burst on the fire
+            const splashR = 7 + (nowMs % 140) / 16;
+            ctx.fillStyle = 'rgba(224, 242, 254, 0.85)';
+            ctx.beginPath();
+            ctx.arc(cx, cy, splashR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    renderPoliceIncidentFX(ctx, inc, x, y, w, h, cx, cy, s, nowMs) {
+        const isRedPhase = Math.floor(nowMs / 130) % 2 === 0;
+        // Alternating Red & Blue Police Strobe Floodlights across the lot
+        ctx.fillStyle = isRedPhase ? 'rgba(239, 68, 68, 0.24)' : 'rgba(59, 130, 246, 0.26)';
+        ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+        ctx.strokeStyle = isRedPhase ? '#ef4444' : '#3b82f6';
+        ctx.lineWidth = 3.5;
+        ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+
+        // Yellow & Black Crime Scene Police Tape Perimeter along bottom of lot
+        const tapeY = y + h - 8;
+        ctx.fillStyle = '#facc15';
+        ctx.fillRect(x + 2, tapeY, w - 4, 6);
+        ctx.fillStyle = '#090d16';
+        const stripeOffset = Math.floor(nowMs / 50) % 8;
+        for (let sx = x + 2 + stripeOffset; sx < x + w - 4; sx += 8) {
+            ctx.fillRect(sx, tapeY, 3, 6);
+        }
+
+        // Draw 16-bit Police Shield & Strobe Sprite
+        const frameIdx = isRedPhase ? 1 : 2;
+        const polSprite = this.fxSprites[`fx_police_${frameIdx}`];
+        const drawSize = Math.floor(s * 0.64);
+        if (polSprite && polSprite.complete) {
+            ctx.drawImage(polSprite, cx - drawSize / 2, cy - drawSize / 2 - 2, drawSize, drawSize);
+        }
+
+        // When Police Unit 101 is ON SCENE, render tactical spotlight beam from Cruiser to building!
+        if (inc.responderUnit && this.world.vehicleManager) {
+            const unitPos = this.world.vehicleManager.getVehicleWorldXY(inc.responderUnit, true);
+            ctx.save();
+            ctx.fillStyle = isRedPhase ? 'rgba(59, 130, 246, 0.28)' : 'rgba(239, 68, 68, 0.28)';
+            ctx.beginPath();
+            ctx.moveTo(unitPos.x, unitPos.y);
+            ctx.lineTo(cx - 14, cy);
+            ctx.lineTo(cx + 14, cy);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    renderMedicalIncidentFX(ctx, inc, x, y, w, h, cx, cy, s, nowMs) {
+        const pulse = 0.5 + 0.45 * Math.sin(nowMs / 110);
+        // Emerald & White Paramedic Triage Glow
+        ctx.fillStyle = `rgba(16, 185, 129, ${0.22 * pulse})`;
+        ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+
+        // Draw 16-bit Paramedic Cross + ECG Sprite
+        const frameIdx = (Math.floor(nowMs / 220) % 2) + 1;
+        const medSprite = this.fxSprites[`fx_medical_${frameIdx}`];
+        const drawSize = Math.floor(s * 0.62);
+        if (medSprite && medSprite.complete) {
+            ctx.drawImage(medSprite, cx - drawSize / 2, cy - drawSize / 2 - 2, drawSize, drawSize);
+        }
+
+        // Animated Live ECG Heartbeat Monitor Wave across bottom of building
+        ctx.save();
+        ctx.strokeStyle = '#6ee7b7';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const waveY = y + h - 7;
+        const beatPhase = ((nowMs / 12) % w);
+        for (let wx = 4; wx < w - 4; wx += 3) {
+            const dist = Math.abs(wx - beatPhase);
+            let dy = 0;
+            if (dist < 3) dy = -7;
+            else if (dist < 6) dy = 6;
+            else if (dist < 9) dy = -3;
+            if (wx === 4) ctx.moveTo(x + wx, waveY + dy);
+            else ctx.lineTo(x + wx, waveY + dy);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // When MEDIC 2 is ON SCENE, render emerald defibrillator / stabilization beam!
+        if (inc.responderUnit && this.world.vehicleManager) {
+            const unitPos = this.world.vehicleManager.getVehicleWorldXY(inc.responderUnit, true);
+            ctx.save();
+            ctx.strokeStyle = '#34d399';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([5, 4]);
+            ctx.lineDashOffset = -Math.floor(nowMs / 25);
+            ctx.beginPath();
+            ctx.moveTo(unitPos.x, unitPos.y);
+            ctx.lineTo(cx, cy);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    renderHazmatIncidentFX(ctx, inc, x, y, w, h, cx, cy, s, nowMs) {
+        const pulse = 0.5 + 0.4 * Math.sin(nowMs / 120);
+        ctx.fillStyle = `rgba(234, 179, 8, ${0.24 * pulse})`;
+        ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+        ctx.strokeStyle = '#eab308';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+
+        const frameIdx = (Math.floor(nowMs / 180) % 2) + 1;
+        const hazSprite = this.fxSprites[`fx_hazmat_${frameIdx}`];
+        const drawSize = Math.floor(s * 0.66);
+        if (hazSprite && hazSprite.complete) {
+            ctx.drawImage(hazSprite, cx - drawSize / 2, cy - drawSize / 2, drawSize, drawSize);
+        }
+
+        if (inc.responderUnit && this.world.vehicleManager) {
+            const unitPos = this.world.vehicleManager.getVehicleWorldXY(inc.responderUnit, true);
+            ctx.save();
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([6, 4]);
+            ctx.lineDashOffset = -Math.floor(nowMs / 22);
+            ctx.beginPath();
+            ctx.moveTo(unitPos.x, unitPos.y);
+            ctx.lineTo(cx, cy);
+            ctx.stroke();
             ctx.restore();
         }
     }
@@ -551,7 +941,6 @@ class TimelineManager {
         const track = document.getElementById('timeline-track');
         if (!track) return;
 
-        // Preserve playhead & ticks, rebuild incident pills staggered across 2 rows
         track.innerHTML = `
             <div class="timeline-ticks">
                 <span>08:00 AM</span>
@@ -565,10 +954,21 @@ class TimelineManager {
             <div class="timeline-playhead" id="timeline-playhead"></div>
         `;
 
-        const sorted = [...this.incidents].sort((a, b) => a.currentMinute - b.currentMinute);
+        // Only display revealed (INCOMING, ACTIVE, RESOLVED, FAILED) incidents on the timeline,
+        // plus a mysterious fog-of-time indicator for how many hidden events remain!
+        const visibleIncs = this.incidents
+            .filter(i => i.state !== INCIDENT_STATE.HIDDEN)
+            .sort((a, b) => a.currentMinute - b.currentMinute);
 
-        sorted.forEach((inc, idx) => {
-            // Clamp visual left % between 6% and 94% so edge pills never clip off screen
+        const hiddenCount = this.incidents.filter(i => i.state === INCIDENT_STATE.HIDDEN).length;
+        if (hiddenCount > 0) {
+            const fogBadge = document.createElement('div');
+            fogBadge.className = 'timeline-fog-badge';
+            fogBadge.innerHTML = `📡 RADAR ACTIVE: <strong>${hiddenCount} UNKNOWN FUTURE CALLS</strong> (Revealed 6m Before Trigger — Drag Incoming Calls to Shift Time!)`;
+            track.appendChild(fogBadge);
+        }
+
+        visibleIncs.forEach((inc, idx) => {
             const rawPct = (inc.currentMinute / 60) * 100;
             const pct = Math.max(7, Math.min(93, rawPct));
             const rowClass = idx % 2 === 0 ? 'row-0' : 'row-1';
@@ -582,9 +982,9 @@ class TimelineManager {
                 ? `<span class="domino-tag" title="Causal Domino Risk: Ignored call triggers '${inc.dominoSpec.title}'!">⛓️</span>`
                 : (inc.isDomino ? `<span class="domino-tag" title="Cascaded Domino Disaster!">⚡DOMINO</span>` : '');
 
-            const nudgeControls = (!inc.immovable && inc.state === INCIDENT_STATE.SCHEDULED)
-                ? `<span class="nudge-btn" data-dir="-3" title="Nudge Earlier (-3m)">◀</span>
-                   <span class="nudge-btn" data-dir="3" title="Delay Incident (+3m)">▶</span>`
+            const nudgeControls = (!inc.immovable && inc.state === INCIDENT_STATE.INCOMING)
+                ? `<span class="nudge-btn" data-dir="-4" title="Move Earlier (-4m)">◀ -4m</span>
+                   <span class="nudge-btn" data-dir="5" title="Push Later (+5m) — Beware Hidden Calls!">▶ +5m</span>`
                 : (inc.immovable ? `<span class="lock-icon" title="Fixed Schedule">🔒</span>` : '');
 
             pill.innerHTML = `
@@ -596,7 +996,7 @@ class TimelineManager {
 
             pill.addEventListener('mousedown', (e) => {
                 if (e.target.dataset.dir) return;
-                if (!inc.immovable && inc.state === INCIDENT_STATE.SCHEDULED) {
+                if (!inc.immovable && inc.state === INCIDENT_STATE.INCOMING) {
                     this.draggingInc = inc;
                     this.dragMoved = false;
                 }
@@ -610,7 +1010,7 @@ class TimelineManager {
                     return;
                 }
 
-                // Clicking an incident card selects the recommended unit & dispatches immediately!
+                // Clicking an incident card selects the recommended unit & dispatches/stages there!
                 if (this.world && this.world.vehicleManager) {
                     const vm = this.world.vehicleManager;
                     vm.selectUnitById(inc.reqUnit);

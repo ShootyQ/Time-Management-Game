@@ -728,6 +728,30 @@ input:checked + .slider:before {
     background-color: #1e293b;
 }
 
+.timeline-pill.state-incoming {
+    background-color: #0f172a;
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
+.timeline-fog-badge {
+    position: absolute;
+    right: 14px;
+    top: 6px;
+    background-color: rgba(15, 23, 42, 0.9);
+    border: 1.5px dashed #475569;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 4;
+}
+
+.timeline-fog-badge strong {
+    color: var(--accent-cyan);
+}
+
 .timeline-pill.state-active {
     background-color: #7f1d1d;
     animation: pulse-alert 0.9s infinite alternate;
