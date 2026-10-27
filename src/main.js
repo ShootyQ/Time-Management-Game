@@ -40,10 +40,13 @@ class GameApp {
         this.hudClock = document.getElementById('hud-clock');
         this.hudLoop = document.getElementById('hud-loop');
         this.hudTokens = document.getElementById('hud-tokens');
+        this.hudSeed = document.getElementById('hud-seed');
+        this.hudTopology = document.getElementById('hud-topology');
 
         // Buttons
         this.btnStartShift = document.getElementById('btn-start-shift');
         this.btnRandomSeed = document.getElementById('btn-random-seed');
+        this.btnHudNewSeed = document.getElementById('btn-hud-new-seed');
         this.btnSettings = document.getElementById('btn-settings');
         this.btnCloseSettings = document.getElementById('btn-close-settings');
         this.btnSaveSettings = document.getElementById('btn-save-settings');
@@ -86,20 +89,35 @@ class GameApp {
         });
 
         // Seed Randomizer
-        this.btnRandomSeed.addEventListener('click', () => {
+        const rollNewSeed = () => {
             window.soundManager.playClick();
             this.districtSeed = Math.floor(1000 + Math.random() * 9000);
             this.seedInput.value = this.districtSeed;
             this.tickerDistrict.textContent = `#${this.districtSeed}`;
-            if (this.world) this.world.generate(this.districtSeed);
-        });
+            if (this.hudSeed) this.hudSeed.textContent = `#${this.districtSeed}`;
+            if (this.world) {
+                this.world.generate(this.districtSeed);
+                if (this.hudTopology) this.hudTopology.textContent = this.world.topologyName;
+                this.world.render();
+            }
+        };
+
+        this.btnRandomSeed.addEventListener('click', rollNewSeed);
+        if (this.btnHudNewSeed) {
+            this.btnHudNewSeed.addEventListener('click', rollNewSeed);
+        }
 
         this.seedInput.addEventListener('change', (e) => {
             const val = parseInt(e.target.value, 10);
             if (!isNaN(val)) {
                 this.districtSeed = val;
                 this.tickerDistrict.textContent = `#${this.districtSeed}`;
-                if (this.world) this.world.generate(this.districtSeed);
+                if (this.hudSeed) this.hudSeed.textContent = `#${this.districtSeed}`;
+                if (this.world) {
+                    this.world.generate(this.districtSeed);
+                    if (this.hudTopology) this.hudTopology.textContent = this.world.topologyName;
+                    this.world.render();
+                }
             }
         });
 
@@ -173,6 +191,8 @@ class GameApp {
         if (this.world) {
             this.world.resize();
             this.world.generate(this.districtSeed);
+            if (this.hudSeed) this.hudSeed.textContent = `#${this.districtSeed}`;
+            if (this.hudTopology) this.hudTopology.textContent = this.world.topologyName;
             this.world.render();
         }
 
@@ -181,6 +201,8 @@ class GameApp {
             if (this.world) {
                 this.world.resize();
                 this.world.generate(this.districtSeed);
+                if (this.hudSeed) this.hudSeed.textContent = `#${this.districtSeed}`;
+                if (this.hudTopology) this.hudTopology.textContent = this.world.topologyName;
                 this.world.render();
             }
         });
