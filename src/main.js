@@ -169,6 +169,12 @@ class GameApp {
         this.menuScreen.classList.add('hidden');
         this.gameScreen.classList.remove('hidden');
 
+        // Dynamically resize canvas to fill the full viewport container
+        if (this.world) {
+            this.world.resize();
+            this.world.generate(this.districtSeed);
+        }
+
         this.inGameSeconds = 8 * 3600; // Reset to 8:00 AM
         this.isPaused = false;
         this.btnPauseShift.textContent = '⏸ PAUSE';
@@ -181,8 +187,6 @@ class GameApp {
         // Start clock tick loop
         if (this.clockTimer) clearInterval(this.clockTimer);
         this.clockTimer = setInterval(() => this.tick(), 1000 / this.simSpeed);
-
-        if (this.world) this.world.render();
     }
 
     exitToMenu() {
