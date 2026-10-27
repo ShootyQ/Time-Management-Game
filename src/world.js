@@ -246,9 +246,9 @@ class World {
             // ARCHETYPE 0: Winding Serpentine S-Curve Highway + Branching Courts
             this.topologyName = 'SERPENTINE S-CURVE VALLEY';
             const flipV = this.prng.random() < 0.5;
-            const rA = flipV ? 10 : 2;
+            const rA = flipV ? 11 : 1;
             const rB = 6;
-            const rC = flipV ? 2 : 10;
+            const rC = flipV ? 1 : 11;
 
             const c1 = this.prng.range(4, 6);
             const c2 = this.prng.range(10, 12);
@@ -263,9 +263,9 @@ class World {
             this.drawRoadLine(c3, rC, c3, rB);
             this.drawRoadLine(c3, rB, 21, rB);
 
-            // Secondary offset collector loops (NOT a full border box)
-            const oppA = flipV ? 2 : 10;
-            const oppC = flipV ? 10 : 2;
+            // Secondary offset collector loops
+            const oppA = flipV ? 1 : 11;
+            const oppC = flipV ? 11 : 1;
             this.drawRoadLine(1, oppA, c2 - 3, oppA);
             this.drawRoadLine(1, rA, 1, oppA);
             this.drawRoadLine(c2 - 3, rB, c2 - 3, oppA);
@@ -406,9 +406,9 @@ class World {
             // ARCHETYPE 4: Switchback Terraces (Interlocking Doglegs)
             this.topologyName = 'SWITCHBACK CANYON TERRACES';
             const bands = [
-                [2, 1, 3, 1],
+                [1, 2, 1, 2],
                 [6, 5, 7, 6],
-                [10, 11, 9, 11]
+                [11, 10, 11, 10]
             ];
             const splitCols = [5, 11, 16];
 
@@ -424,9 +424,9 @@ class World {
             }
 
             this.drawRoadLine(1, bands[0][0], 1, bands[2][0]);
-            this.drawRoadLine(8, bands[0][1], 8, bands[2][1]);
-            this.drawRoadLine(14, bands[0][2], 14, bands[2][2]);
-            this.drawRoadLine(20, bands[0][3], 20, bands[2][3]);
+            this.drawRoadLine(8, 1, 8, 11);
+            this.drawRoadLine(14, 1, 14, 11);
+            this.drawRoadLine(20, 1, 20, 11);
 
         } else if (styleRoll === 5) {
             // ARCHETYPE 5: Central Lake & Causeway Bridge
@@ -442,9 +442,9 @@ class World {
                 }
             }
 
-            // Clean lakeside ring road (1 tile outside lake so no 2x2 diagonal clumps)
-            const rTop = lakeR - 2;
-            const rBot = lakeR + lakeH + 1;
+            // Clean lakeside ring road
+            const rTop = 1;
+            const rBot = 11;
             const cLeft = lakeC - 2;
             const cRight = lakeC + lakeW + 1;
 
@@ -478,20 +478,16 @@ class World {
             this.drawRoadLine(0, stemR, forkC, stemR);
 
             // Upper Fork climbing in steps to North-East
-            this.drawRoadLine(forkC, stemR, forkC, 2);
-            this.drawRoadLine(forkC, 2, 15, 2);
-            this.drawRoadLine(15, 2, 15, 1);
-            this.drawRoadLine(15, 1, 20, 1);
+            this.drawRoadLine(forkC, stemR, forkC, 1);
+            this.drawRoadLine(forkC, 1, 20, 1);
 
             // Lower Fork dropping in steps to South-East
-            this.drawRoadLine(forkC, stemR, forkC, 10);
-            this.drawRoadLine(forkC, 10, 15, 10);
-            this.drawRoadLine(15, 10, 15, 11);
-            this.drawRoadLine(15, 11, 20, 11);
+            this.drawRoadLine(forkC, stemR, forkC, 11);
+            this.drawRoadLine(forkC, 11, 20, 11);
 
             // Eastern connector loops between the two forks
             this.drawRoadLine(20, 1, 20, 11);
-            this.drawRoadLine(15, 2, 15, 10);
+            this.drawRoadLine(15, 1, 15, 11);
             this.drawRoadLine(forkC, 6, 20, 6);
 
             // Western stepped loops
@@ -682,8 +678,9 @@ class World {
 
     // Carve clean multi-tile streets into any remaining landlocked pockets after landmarks place
     carveCleanPocketStreets() {
-        for (let pass = 0; pass < 20; pass++) {
-            let bestCandidate = null;
+        // Step 1: Connect any deep pockets (distance >= 2 from road) with clean L-paths
+        for (let pass = 0; pass < 30; pass++) {
+            let target = null;
             let bestScore = 0;
 
             for (let r = 0; r < this.rows; r++) {
@@ -704,16 +701,15 @@ class World {
                         }
                     }
 
-                    // Only extend a road if it unlocks at least 2 landlocked cells (avoids 1-tile warts for single cells)
-                    if (unlocked >= 2 && unlocked > bestScore) {
+                    if (unlocked >= 1 && unlocked > bestScore) {
                         bestScore = unlocked;
-                        bestCandidate = { c, r };
+                        target = { c, r };
                     }
                 }
             }
 
-            if (bestCandidate) {
-                this.grid[bestCandidate.r][bestCandidate.c].type = CELL_TYPE.ROAD;
+            if (target && bestScore >= 2) {
+                this.grid[target.r][target.c].type = CELL_TYPE.ROAD;
             } else {
                 break;
             }
@@ -1054,41 +1050,8 @@ class World {
         const streetNames = ['Oak St', 'Elm Ave', 'Maple Ct', 'Cedar Way', 'Pine Rd', 'Willow Ln', 'Birch St', '4th Ave', 'River Rd', 'Grand Blvd'];
         let houseNum = 1;
 
-        // Pass 1: Pair any landlocked EMPTY cell with an adjacent road-touching EMPTY cell
-        // into a 2-tile Residential Duplex / Estate so almost ZERO dead squares ever occur!
-        for (let r = 0; r < this.rows; r++) {
-            for (let c = 0; c < this.cols; c++) {
-                if (this.grid[r][c].type === CELL_TYPE.EMPTY && !this.getAdjacentRoad(c, r)) {
-                    const dirs = [
-                        { dc: -1, dr: 0, rootC: c - 1, rootR: r, w: 2, h: 1 },
-                        { dc: 1, dr: 0, rootC: c, rootR: r, w: 2, h: 1 },
-                        { dc: 0, dr: -1, rootC: c, rootR: r - 1, w: 1, h: 2 },
-                        { dc: 0, dr: 1, rootC: c, rootR: r, w: 1, h: 2 }
-                    ];
-                    for (const d of dirs) {
-                        const nc = c + d.dc;
-                        const nr = r + d.dr;
-                        if (nc >= 0 && nc < this.cols && nr >= 0 && nr < this.rows) {
-                            if (this.grid[nr][nc].type === CELL_TYPE.EMPTY && this.getAdjacentRoad(nc, nr)) {
-                                const houseVariant = (this.prng.range(1, 10)).toString().padStart(2, '0');
-                                const street = this.prng.choice(streetNames);
-                                this.commitLot(d.rootC, d.rootR, d.w, d.h, {
-                                    type: LOT_TYPE.RESIDENTIAL,
-                                    name: `Residence #${houseNum} Estate`,
-                                    address: `${this.prng.range(10, 99)} ${street}`,
-                                    sprite: `house_${houseVariant}`,
-                                    hazard: 'Domestic / Kitchen Fire Risk'
-                                });
-                                houseNum++;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Pass 2: Fill all remaining road-adjacent EMPTY cells with standard 1x1 Houses
+        // Every Residential House is strictly 1x1 and MUST directly touch a road!
+        // Any non-road-adjacent tile becomes a clean green Pocket Park (no floating houses off the road!)
         for (let r = 0; r < this.rows; r++) {
             for (let c = 0; c < this.cols; c++) {
                 if (this.grid[r][c].type === CELL_TYPE.EMPTY) {
@@ -1482,11 +1445,23 @@ class World {
         const sprite = this.images[lot.spriteKey];
         if (sprite && sprite.complete) {
             if (lot.w === 2 && lot.h === 1) {
-                ctx.drawImage(sprite, x + 2, y + 2, s - 4, s - 4);
-                this.renderCompoundYard(x + s, y, s, lot.type);
+                const firstTouchesRoad = Boolean(this.getAdjacentRoad(lot.col, lot.row));
+                if (firstTouchesRoad) {
+                    ctx.drawImage(sprite, x + 2, y + 2, s - 4, s - 4);
+                    this.renderCompoundYard(x + s, y, s, lot.type);
+                } else {
+                    this.renderCompoundYard(x, y, s, lot.type);
+                    ctx.drawImage(sprite, x + s + 2, y + 2, s - 4, s - 4);
+                }
             } else if (lot.w === 1 && lot.h === 2) {
-                ctx.drawImage(sprite, x + 2, y + 2, s - 4, s - 4);
-                this.renderCompoundYard(x, y + s, s, lot.type);
+                const firstTouchesRoad = Boolean(this.getAdjacentRoad(lot.col, lot.row));
+                if (firstTouchesRoad) {
+                    ctx.drawImage(sprite, x + 2, y + 2, s - 4, s - 4);
+                    this.renderCompoundYard(x, y + s, s, lot.type);
+                } else {
+                    this.renderCompoundYard(x, y, s, lot.type);
+                    ctx.drawImage(sprite, x + 2, y + s + 2, s - 4, s - 4);
+                }
             } else {
                 ctx.drawImage(sprite, x + 2, y + 2, w - 4, h - 4);
             }
