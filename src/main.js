@@ -55,6 +55,7 @@ class GameApp {
         this.btnBriefingReady = document.getElementById('btn-briefing-ready');
         this.btnExitToMenu = document.getElementById('btn-exit-to-menu');
         this.btnPauseShift = document.getElementById('btn-pause-shift');
+        this.btnSpeedToggle = document.getElementById('btn-speed-toggle');
 
         // Settings toggles
         this.settingVolume = document.getElementById('setting-volume');
@@ -72,8 +73,15 @@ class GameApp {
     }
 
     startRenderLoop() {
-        const loop = () => {
+        let lastTime = performance.now();
+        const loop = (now) => {
+            const dt = (now - lastTime) / 1000;
+            lastTime = now;
+
             if (this.currentState === STATE.PLAYING && this.world) {
+                if (this.world.vehicleManager) {
+                    this.world.vehicleManager.update(dt, this.simSpeed, this.isPaused);
+                }
                 this.world.render();
             }
             requestAnimationFrame(loop);
@@ -179,6 +187,40 @@ class GameApp {
             window.soundManager.playClick();
             this.btnPauseShift.textContent = this.isPaused ? '▶ RESUME' : '⏸ PAUSE';
             this.btnPauseShift.style.borderColor = this.isPaused ? 'var(--accent-amber)' : 'var(--border-color)';
+        });
+
+        // In-game Speed Toggle (1x -> 2x -> 5x)
+        if (this.btnSpeedToggle) {
+            this.btnSpeedToggle.addEventListener('click', () => {
+                const speeds = [1, 2, 5];
+                const nextIdx = (speeds.indexOf(this.simSpeed) + 1) % speeds.length;
+                this.simSpeed = speeds[nextIdx];
+                this.btnSpeedToggle.textContent = `⚡ ${this.simSpeed}x`;
+                if (this.settingSpeed) this.settingSpeed.value = String(this.simSpeed);
+                window.soundManager.playClick();
+                if (this.currentState === STATE.PLAYING) {
+                    if (this.clockTimer) clearInterval(this.clockTimer);
+                    this.clockTimer = setInterval(() => this.tick(), 1000 / this.simSpeed);
+                }
+            });
+        }
+
+        // Keyboard Shortcuts for Unit Selection (1-4), Return to Base (R), and Pause (Space)
+        window.addEventListener('keydown', (e) => {
+            if (this.currentState !== STATE.PLAYING || !this.world || !this.world.vehicleManager) return;
+            if (e.target && e.target.tagName === 'INPUT') return;
+
+            const vm = this.world.vehicleManager;
+            if (e.key === '1') vm.selectUnitById('unit_fire');
+            else if (e.key === '2') vm.selectUnitById('unit_police');
+            else if (e.key === '3') vm.selectUnitById('unit_medic');
+            else if (e.key === '4') vm.selectUnitById('unit_chief');
+            else if (e.key === 'r' || e.key === 'R') {
+                if (vm.selectedUnit) vm.returnUnitToBase(vm.selectedUnit);
+            } else if (e.key === ' ') {
+                e.preventDefault();
+                this.btnPauseShift.click();
+            }
         });
     }
 

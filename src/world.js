@@ -64,6 +64,8 @@ class World {
         this.images = {};
         this.loadAssets();
 
+        this.vehicleManager = typeof VehicleManager !== 'undefined' ? new VehicleManager(this) : null;
+
         this.resize();
         this.generate(this.seed);
 
@@ -183,6 +185,11 @@ class World {
 
         // 9. Build Navigation Graph for Phase 3 A* Pathfinding
         this.buildRoadGraph();
+
+        // 10. Initialize Emergency Responders & Seeded Civilian Traffic
+        if (this.vehicleManager) {
+            this.vehicleManager.initForWorld(this.seed);
+        }
     }
 
     isRoadOrBridge(c, r) {
@@ -1223,10 +1230,32 @@ class World {
             }
         });
 
-        this.canvas.addEventListener('click', () => {
-            if (this.hoveredCell && this.hoveredCell.lot) {
-                this.selectedLot = this.hoveredCell.lot;
-                window.soundManager.playClick();
+        this.canvas.addEventListener('click', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+
+            if (this.vehicleManager) {
+                const clickedUnit = this.vehicleManager.getResponderAtPixel(px, py);
+                if (clickedUnit) {
+                    this.vehicleManager.selectUnitById(clickedUnit.id);
+                    return;
+                }
+            }
+
+            if (this.hoveredCell) {
+                if (this.hoveredCell.lot) {
+                    this.selectedLot = this.hoveredCell.lot;
+                    if (this.vehicleManager) {
+                        this.vehicleManager.dispatchSelectedUnitToLot(this.hoveredCell.lot);
+                    } else if (window.soundManager) {
+                        window.soundManager.playClick();
+                    }
+                } else if (this.isRoadOrBridge(this.hoveredCell.col, this.hoveredCell.row)) {
+                    if (this.vehicleManager) {
+                        this.vehicleManager.dispatchSelectedUnitToRoad(this.hoveredCell.col, this.hoveredCell.row);
+                    }
+                }
             }
         });
     }
@@ -1281,7 +1310,12 @@ class World {
             }
         }
 
-        // 5. Render Overlays & Tooltips
+        // 5. Render Emergency Responders, Tactical A* Routes & Civilian Traffic
+        if (this.vehicleManager) {
+            this.vehicleManager.render(ctx);
+        }
+
+        // 6. Render Overlays & Tooltips
         this.renderOverlays();
     }
 
