@@ -501,36 +501,28 @@ input:checked + .slider:before {
 }
 
 .timeline-dock {
-    height: 124px;
+    height: 138px;
     background-color: #0c111c;
     border-top: 2px solid var(--border-color);
-    padding: 8px 18px;
+    padding: 6px 14px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-}
-
-.timeline-header {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    color: var(--text-muted);
-    letter-spacing: 1px;
-    margin-bottom: 6px;
+    gap: 6px;
 }
 
 .unit-dispatch-bar {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    height: 82px;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    height: 68px;
 }
 
 .unit-card {
     background-color: #111827;
     border: 2px solid var(--border-color);
-    border-radius: 6px;
-    padding: 6px 10px;
+    border-radius: 5px;
+    padding: 4px 8px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -544,41 +536,41 @@ input:checked + .slider:before {
 
 .unit-card.selected {
     background-color: #17253b;
-    box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
 }
 
 .unit-card-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
+    gap: 5px;
 }
 
 .unit-hotkey {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: bold;
     color: #090d16;
-    padding: 1px 5px;
+    padding: 1px 4px;
     border-radius: 3px;
 }
 
 .unit-callsign {
-    font-size: 13px;
-    letter-spacing: 1px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
     flex: 1;
 }
 
 .unit-status-pill {
-    font-size: 10px;
+    font-size: 9px;
     background-color: #090d16;
     color: #e2e8f0;
-    padding: 2px 6px;
+    padding: 1px 5px;
     border-radius: 3px;
     border: 1px solid #334155;
 }
 
 .unit-card-dest {
-    font-size: 11px;
+    font-size: 10px;
     color: #94a3b8;
     white-space: nowrap;
     overflow: hidden;
@@ -587,14 +579,14 @@ input:checked + .slider:before {
 
 .unit-card-actions {
     display: flex;
-    gap: 6px;
+    gap: 4px;
 }
 
 .unit-btn-select,
 .unit-btn-rtb {
     font-family: inherit;
-    font-size: 10px;
-    padding: 3px 8px;
+    font-size: 9px;
+    padding: 2px 6px;
     border-radius: 3px;
     border: 1px solid #334155;
     background-color: #0b1120;
@@ -610,4 +602,112 @@ input:checked + .slider:before {
 .unit-btn-rtb:hover {
     border-color: var(--accent-cyan);
     color: #ffffff;
+}
+
+/* ========================================================
+   PHASE 4: INTERACTIVE TIMELINE TRACK & INCIDENT PILLS
+   ======================================================== */
+.timeline-track-wrapper {
+    position: relative;
+    height: 48px;
+    background-color: #070b14;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.timeline-track {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.timeline-ticks {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 10px 3px 10px;
+    font-size: 9px;
+    color: #64748b;
+    pointer-events: none;
+}
+
+.timeline-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: var(--accent-red);
+    box-shadow: 0 0 8px var(--accent-red);
+    z-index: 10;
+    pointer-events: none;
+}
+
+.timeline-pill {
+    position: absolute;
+    top: 5px;
+    transform: translateX(-50%);
+    background-color: #111827;
+    border: 1.5px solid var(--accent-cyan);
+    border-radius: 4px;
+    padding: 2px 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: #f8fafc;
+    cursor: pointer;
+    z-index: 5;
+    white-space: nowrap;
+    transition: left 0.15s ease, transform 0.15s ease;
+}
+
+.timeline-pill:hover {
+    z-index: 15;
+    transform: translateX(-50%) scale(1.05);
+    background-color: #1e293b;
+}
+
+.timeline-pill.state-active {
+    background-color: #7f1d1d;
+    animation: pulse-alert 0.9s infinite alternate;
+}
+
+.timeline-pill.state-resolved {
+    opacity: 0.45;
+    border-color: #10b981 !important;
+    text-decoration: line-through;
+}
+
+.timeline-pill.state-failed {
+    opacity: 0.55;
+    border-color: #ef4444 !important;
+    background-color: #450a0a;
+}
+
+.pill-time {
+    color: var(--accent-amber);
+    font-weight: bold;
+    font-size: 9px;
+}
+
+.nudge-btn {
+    background-color: #1e293b;
+    color: var(--accent-amber);
+    padding: 0 3px;
+    border-radius: 2px;
+    font-size: 9px;
+    border: 1px solid #475569;
+}
+
+.nudge-btn:hover {
+    background-color: var(--accent-amber);
+    color: #090d16;
+}
+
+@keyframes pulse-alert {
+    from { box-shadow: 0 0 4px #ef4444; }
+    to { box-shadow: 0 0 14px #ef4444; }
 }

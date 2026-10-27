@@ -27,6 +27,7 @@ const LOT_TYPE = {
     STATION_FIRE: 'STATION_FIRE',
     STATION_POLICE: 'STATION_POLICE',
     STATION_HOSPITAL: 'STATION_HOSPITAL',
+    STATION_TOW: 'STATION_TOW',
     COMMERCIAL_GAS: 'COMMERCIAL_GAS',
     COMMERCIAL_DINER: 'COMMERCIAL_DINER',
     CIVIC_SCHOOL: 'CIVIC_SCHOOL',
@@ -98,6 +99,7 @@ class World {
             'fire_station': 'assets/stations/fire_station_1.png',
             'police_station': 'assets/stations/police_station_1.png',
             'hospital': 'assets/stations/hospital_1.png',
+            'mechanic_shop': 'assets/commercial/mechanic_shop.png',
             'gas_station': 'assets/commercial/gas_station.png',
             'diner': 'assets/commercial/diner.png',
             'school': 'assets/commercial/school.png',
@@ -190,6 +192,11 @@ class World {
         // 10. Initialize Emergency Responders & Seeded Civilian Traffic
         if (this.vehicleManager) {
             this.vehicleManager.initForWorld(this.seed);
+        }
+
+        // 11. Initialize Phase 4 Seeded Incident Schedule (08:00 - 09:00 AM)
+        if (window.timelineManager) {
+            window.timelineManager.initForWorld(this, this.seed);
         }
     }
 
@@ -949,6 +956,7 @@ class World {
             { type: LOT_TYPE.STATION_FIRE, name: 'Engine Co. 4 Firehouse', address: '12 Firehouse Lane', sprite: 'fire_station', w: 2, h: 2, hazard: 'Dispatches Fire Engine' },
             { type: LOT_TYPE.STATION_POLICE, name: 'Precinct 9 Police HQ', address: '50 Civic Plaza', sprite: 'police_station', w: 2, h: 2, hazard: 'Dispatches Police Patrol' },
             { type: LOT_TYPE.CIVIC_SCHOOL, name: 'Lincoln Elementary School', address: '85 School Lane', sprite: 'school', w: 2, h: 2, hazard: '08:15 School Bell Pedestrian Jam' },
+            { type: LOT_TYPE.STATION_TOW, name: 'Apex Auto & Wrecker Tow Shop', address: '77 Mechanic Row', sprite: 'mechanic_shop', w: 2, h: 1, hazard: 'Dispatches Heavy Tow Truck (Hauls Wrecks)' },
             { type: LOT_TYPE.COMMERCIAL_SUPERMARKET, name: 'FreshGrocer Supermarket', address: '150 Commercial St', sprite: 'supermarket', w: 2, h: 1, hazard: 'Delivery Truck Bottleneck' },
             { type: LOT_TYPE.INDUSTRIAL_WAREHOUSE, name: 'Keystone Chemical Storage', address: '300 Industrial Blvd', sprite: 'warehouse', w: 2, h: 1, hazard: 'Chemical Cascade Hazard' },
             { type: LOT_TYPE.COMMERCIAL_GAS, name: 'Apex Gas & Fuel', address: '200 Main Highway', sprite: 'gas_station', w: 1, h: 1, hazard: 'High Explosion Risk (90s Timer)' },
@@ -1274,12 +1282,17 @@ class World {
             }
         }
 
-        // 5. Render Emergency Responders, Tactical A* Routes & Civilian Traffic
+        // 5. Render Active Scheduled Emergencies on Lots (Phase 4)
+        if (window.timelineManager) {
+            window.timelineManager.renderMapIncidents(ctx);
+        }
+
+        // 6. Render Emergency Responders, Tactical A* Routes & Civilian Traffic
         if (this.vehicleManager) {
             this.vehicleManager.render(ctx);
         }
 
-        // 6. Render Overlays & Tooltips
+        // 7. Render Overlays & Tooltips
         this.renderOverlays();
     }
 
@@ -1559,6 +1572,7 @@ class World {
         else if (lot.type === LOT_TYPE.STATION_POLICE) this.renderBadge(x + 4, y + 4, '🚓 POLICE HQ', '#3b82f6');
         else if (lot.type === LOT_TYPE.STATION_HOSPITAL) this.renderBadge(x + 4, y + 4, '🚑 HOSPITAL ER', '#10b981');
         else if (lot.type === LOT_TYPE.CIVIC_SCHOOL) this.renderBadge(x + 4, y + 4, '🏫 SCHOOL', '#f59e0b');
+        else if (lot.type === LOT_TYPE.STATION_TOW) this.renderBadge(x + 4, y + 4, '🔧 AUTO & TOW', '#f97316');
     }
 
     renderCompoundYard(yx, yy, s, lotType) {

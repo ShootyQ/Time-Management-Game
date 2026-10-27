@@ -82,6 +82,9 @@ class GameApp {
                 if (this.world.vehicleManager) {
                     this.world.vehicleManager.update(dt, this.simSpeed, this.isPaused);
                 }
+                if (window.timelineManager) {
+                    window.timelineManager.update(dt, this.inGameSeconds, this.simSpeed, this.isPaused);
+                }
                 this.world.render();
             }
             requestAnimationFrame(loop);
@@ -215,6 +218,7 @@ class GameApp {
             else if (e.key === '2') vm.selectUnitById('unit_police');
             else if (e.key === '3') vm.selectUnitById('unit_medic');
             else if (e.key === '4') vm.selectUnitById('unit_chief');
+            else if (e.key === '5') vm.selectUnitById('unit_tow');
             else if (e.key === 'r' || e.key === 'R') {
                 if (vm.selectedUnit) vm.returnUnitToBase(vm.selectedUnit);
             } else if (e.key === ' ') {
@@ -273,7 +277,8 @@ class GameApp {
     tick() {
         if (this.isPaused) return;
 
-        this.inGameSeconds += 1;
+        // 4 in-game seconds per real tick so the 08:00 - 09:00 AM shift plays out at an exciting tactical pace
+        this.inGameSeconds += 4;
         this.updateClockDisplay();
 
         // Check for 09:00:00 AM (End of 1-Hour Shift)

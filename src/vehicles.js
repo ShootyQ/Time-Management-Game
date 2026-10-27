@@ -1,16 +1,14 @@
 // ========================================================
-// CHRONOS DISPATCH - Phase 3: Vehicle Engine, Traffic Signals & Collisions
+// CHRONOS DISPATCH - Phase 3 & 4: Vehicle Engine, Tow Wrecker & Traffic
 // Features:
 // 1. Station Bay Emergence & Return:
-//    - Responders stay hidden inside their station garage until dispatched,
-//      drive out down the apron onto the road, and drive back inside on return!
-// 2. Live Traffic Lights (4-Way) & Stop Signs (3-Way):
-//    - Civilian vehicles obey RED/YELLOW lights and pause/yield at STOP signs.
-//    - Reckless drivers (Sports Coupe, Taxi, etc.) occasionally run red lights!
-// 3. Real-Time Vehicle Collision & Wreckage System:
-//    - Perpendicular intersection crashes & emergency responder T-bone collisions
-//    - Spawns burning/smoking 2-car wrecks that block intersections & add Damage/Casualties
-//    - Dispatch Police/Fire/Medic to the wreck to clear the road and rescue victims!
+//    - 5 Responders stay hidden inside their station garage until dispatched:
+//      [1] ENGINE 4 (Fire), [2] UNIT 101 (Police), [3] MEDIC 2 (Ambulance),
+//      [4] CHIEF 1 (Command SUV), [5] TOW 5 (Heavy Wrecker Tow Truck)
+// 2. Live Traffic Lights (4-Way) & Stop Signs (3-Way)
+// 3. Rare, Impactful Traffic Collisions + Tow Truck Hauling to Mechanic Shop:
+//    - Strict cooldowns (no immediate spam: 25s grace period + 60s global cooldown, max 1 random crash)
+//    - Dispatch [5] TOW 5 to hook up wrecked vehicles and physically tow them back to the Mechanic Shop!
 // ========================================================
 
 const UNIT_STATUS = {
@@ -18,6 +16,7 @@ const UNIT_STATUS = {
     STAGED: 'STAGED',
     EN_ROUTE: 'EN ROUTE',
     ON_SCENE: 'ON SCENE',
+    TOWING: 'TOWING WRECK',
     RETURNING: 'RETURNING'
 };
 
@@ -31,6 +30,7 @@ class VehicleManager {
 
         this.totalDamage = 0;
         this.totalCasualties = 0;
+        this.globalCrashCooldown = 25.0; // 25s grace period at start of shift
 
         this.sprites = {};
         this.loadSprites();
@@ -41,7 +41,8 @@ class VehicleManager {
             'responder_police_cruiser',
             'responder_fire_engine',
             'responder_ambulance',
-            'responder_chief_suv'
+            'responder_chief_suv',
+            'responder_tow_truck'
         ];
 
         for (const baseKey of responderKeys) {
@@ -89,7 +90,6 @@ class VehicleManager {
         return Math.PI / 2;
     }
 
-    // Compute exact pixel center of the building tile where the garage bay is located
     getLotGarageXY(lot, facingRoad) {
         const s = this.world.cellSize;
         if (!lot) {
@@ -98,7 +98,6 @@ class VehicleManager {
                 y: this.world.offsetY + facingRoad.row * s + s / 2
             };
         }
-        // Pick the tile inside the lot that is directly adjacent to facingRoad
         let bayCol = lot.col;
         let bayRow = lot.row;
         let bestD = 999;
@@ -130,6 +129,7 @@ class VehicleManager {
         this.collisions = [];
         this.totalDamage = 0;
         this.totalCasualties = 0;
+        this.globalCrashCooldown = 25.0; // No immediate accidents on load!
         this.updateDamageHUD();
 
         const findStationRoad = (lotType, fallbackIndex = 0) => {
@@ -146,8 +146,9 @@ class VehicleManager {
         };
 
         const fireSpawn = findStationRoad(LOT_TYPE.STATION_FIRE, 0);
-        const policeSpawn = findStationRoad(LOT_TYPE.STATION_POLICE, 5);
-        const hospitalSpawn = findStationRoad(LOT_TYPE.STATION_HOSPITAL, 10);
+        const policeSpawn = findStationRoad(LOT_TYPE.STATION_POLICE, 4);
+        const hospitalSpawn = findStationRoad(LOT_TYPE.STATION_HOSPITAL, 8);
+        const towSpawn = findStationRoad(LOT_TYPE.STATION_TOW, 12);
 
         const defs = [
             {
@@ -189,6 +190,16 @@ class VehicleManager {
                 color: '#f59e0b',
                 speedTilesPerSec: 3.6,
                 spawn: fireSpawn
+            },
+            {
+                id: 'unit_tow',
+                callsign: 'TOW 5',
+                role: 'Heavy Wrecker Tow Truck',
+                hotkey: '5',
+                spriteBase: 'responder_tow_truck',
+                color: '#f97316',
+                speedTilesPerSec: 2.9,
+                spawn: towSpawn
             }
         ];
 
@@ -215,10 +226,10 @@ class VehicleManager {
                 headingRad: initialHeading,
                 status: UNIT_STATUS.IDLE_AT_BASE,
                 sirenActive: false,
-                // Hidden inside station bay until dispatched!
                 inGarage: true,
-                bayMode: null, // 'EXITING' | 'ENTERING' | null
+                bayMode: null,
                 bayProgress: 0,
+                towedSpriteKey: null, // Holds wrecked car sprite when TOW 5 hauls a wreck back to shop!
                 unitIndex: idx
             });
         });
@@ -232,27 +243,27 @@ class VehicleManager {
     spawnCivilianTraffic() {
         if (this.world.roadNodes.length < 4) return;
 
+        // Only 1 reckless car in the pool so random accidents are rare!
         const civPool = [
-            { sprite: 'car_sports_coupe', name: 'Reckless Sports Coupe', speed: 2.45, prefLot: null, reckless: true },
-            { sprite: 'car_taxi_yellow', name: 'Rushing Metro Cab #44', speed: 2.25, prefLot: LOT_TYPE.COMMERCIAL_BANK, reckless: true },
-            { sprite: 'car_compact_orange', name: 'Speeding Hot-Hatch', speed: 2.2, prefLot: null, reckless: true },
+            { sprite: 'car_sports_coupe', name: 'Reckless Sports Coupe', speed: 2.15, prefLot: null, reckless: true },
+            { sprite: 'car_taxi_yellow', name: 'Metro Cab #44', speed: 1.9, prefLot: LOT_TYPE.COMMERCIAL_BANK, reckless: false },
+            { sprite: 'car_compact_orange', name: 'Compact Coupe', speed: 1.8, prefLot: null, reckless: false },
             { sprite: 'car_school_bus', name: 'School Bus #12', speed: 1.35, prefLot: LOT_TYPE.CIVIC_SCHOOL, reckless: false },
             { sprite: 'car_van_delivery', name: 'FreshGrocer Delivery Van', speed: 1.55, prefLot: LOT_TYPE.COMMERCIAL_SUPERMARKET, reckless: false },
             { sprite: 'car_garbage_truck', name: 'Municipal Sanitation Truck', speed: 1.2, prefLot: null, reckless: false },
             { sprite: 'car_sedan_blue', name: 'Civilian Sedan', speed: 1.8, prefLot: null, reckless: false },
-            { sprite: 'car_sedan_red', name: 'Civilian Sedan', speed: 1.9, prefLot: null, reckless: false },
+            { sprite: 'car_sedan_red', name: 'Civilian Sedan', speed: 1.85, prefLot: null, reckless: false },
             { sprite: 'car_sedan_silver', name: 'Commuter Sedan', speed: 1.75, prefLot: null, reckless: false },
             { sprite: 'car_pickup_white', name: 'Utility Pickup', speed: 1.7, prefLot: LOT_TYPE.INDUSTRIAL_WAREHOUSE, reckless: false },
-            { sprite: 'car_suv_dark', name: 'Suburban SUV', speed: 1.85, prefLot: null, reckless: false },
+            { sprite: 'car_suv_dark', name: 'Suburban SUV', speed: 1.8, prefLot: null, reckless: false },
             { sprite: 'car_compact_green', name: 'Compact Hatchback', speed: 1.65, prefLot: null, reckless: false },
-            { sprite: 'car_station_wagon', name: 'Family Wagon', speed: 1.6, prefLot: null, reckless: false },
-            { sprite: 'car_sedan_blue', name: 'Eastside Commuter', speed: 1.85, prefLot: LOT_TYPE.COMMERCIAL_DINER, reckless: false }
+            { sprite: 'car_station_wagon', name: 'Family Wagon', speed: 1.6, prefLot: null, reckless: false }
         ];
 
         const nodes = [...this.world.roadNodes];
         this.prng.shuffle(nodes);
 
-        const count = Math.min(14, nodes.length);
+        const count = Math.min(12, nodes.length);
         for (let i = 0; i < count; i++) {
             const spec = civPool[i % civPool.length];
             const startNode = nodes[i];
@@ -262,7 +273,7 @@ class VehicleManager {
                 spriteKey: spec.sprite,
                 speedTilesPerSec: spec.speed,
                 prefLot: spec.prefLot,
-                isReckless: spec.reckless,
+                isReckless: spec.reckless && i === 0, // Only 1 reckless car total
                 col: startNode.col,
                 row: startNode.row,
                 progress: 0,
@@ -272,7 +283,7 @@ class VehicleManager {
                 stopSignWait: 0,
                 stoppedAtTileKey: null,
                 involvedInCrash: false,
-                crashCooldown: 0
+                crashCooldown: 15.0
             };
             this.assignNextCivilianRoute(civ);
             this.civilians.push(civ);
@@ -366,7 +377,7 @@ class VehicleManager {
                     stepCost += 0.35;
                 }
                 if (this.isCellBlockedByCrash(nc, nr) && !(ignoreCrashAtDest && nc === endCol && nr === endRow)) {
-                    stepCost += 6.0; // Heavy penalty so traffic routes around crashes when possible
+                    stepCost += 6.0;
                 }
 
                 const tentativeG = gScore.get(current.key) + stepCost;
@@ -409,7 +420,6 @@ class VehicleManager {
 
     dispatchSelectedUnitToLot(lot) {
         if (!this.selectedUnit || !lot || !lot.facingRoad) return false;
-        // If clicking the unit's own home station while it is out on the map, return it to base!
         if (lot === this.selectedUnit.homeLot && !this.selectedUnit.inGarage) {
             return this.returnUnitToBase(this.selectedUnit);
         }
@@ -423,15 +433,16 @@ class VehicleManager {
 
     dispatchSelectedUnitToRoad(col, row) {
         if (!this.selectedUnit || !this.world.isRoadOrBridge(col, row)) return false;
+        // If user clicked directly on an active crash tile, prefer dispatching TOW 5 if selectedUnit is at base or dispatch selectedUnit
         return this.dispatchUnit(this.selectedUnit, col, row, null);
     }
 
-    returnUnitToBase(unit) {
+    returnUnitToBase(unit, isTowing = false) {
         if (!unit || unit.inGarage) return false;
         const ok = this.dispatchUnit(unit, unit.homeCol, unit.homeRow, unit.homeLot, true);
         if (ok) {
-            unit.status = UNIT_STATUS.RETURNING;
-            unit.sirenActive = false;
+            unit.status = isTowing ? UNIT_STATUS.TOWING : UNIT_STATUS.RETURNING;
+            unit.sirenActive = isTowing;
             this.syncHUD();
         }
         return ok;
@@ -448,7 +459,6 @@ class VehicleManager {
         unit.targetRow = destRow;
         unit.targetLot = targetLot;
 
-        // If currently parked inside the station garage, smoothly drive out down the apron onto the road first!
         if (unit.inGarage) {
             unit.inGarage = false;
             unit.col = unit.homeCol;
@@ -467,21 +477,21 @@ class VehicleManager {
             if (isReturn) {
                 unit.bayMode = 'ENTERING';
                 unit.bayProgress = 0;
-                unit.status = UNIT_STATUS.RETURNING;
-                unit.sirenActive = false;
+                unit.status = unit.towedSpriteKey ? UNIT_STATUS.TOWING : UNIT_STATUS.RETURNING;
+                unit.sirenActive = Boolean(unit.towedSpriteKey);
             } else {
                 unit.status = targetLot ? UNIT_STATUS.ON_SCENE : UNIT_STATUS.STAGED;
                 unit.sirenActive = Boolean(targetLot);
             }
         } else {
             unit.path = path.slice(1);
-            unit.status = isReturn ? UNIT_STATUS.RETURNING : UNIT_STATUS.EN_ROUTE;
-            unit.sirenActive = !isReturn;
+            unit.status = isReturn ? (unit.towedSpriteKey ? UNIT_STATUS.TOWING : UNIT_STATUS.RETURNING) : UNIT_STATUS.EN_ROUTE;
+            unit.sirenActive = !isReturn || Boolean(unit.towedSpriteKey);
             this.updateHeadingFromStep(unit, unit.col, unit.row, unit.path[0].col, unit.path[0].row);
         }
 
         if (window.soundManager) {
-            if (isReturn) window.soundManager.playClick();
+            if (isReturn && !unit.towedSpriteKey) window.soundManager.playClick();
             else window.soundManager.playSirenBlip();
         }
 
@@ -506,17 +516,17 @@ class VehicleManager {
         const dt = Math.min(0.1, dtSeconds) * simSpeed;
         this.world.simTime += dt;
 
+        if (this.globalCrashCooldown > 0) {
+            this.globalCrashCooldown -= dt;
+        }
+
         // 1. Update Emergency Responders (including Garage Exit / Enter animations)
         for (const unit of this.responders) {
             if (unit.inGarage) continue;
 
             if (unit.bayMode === 'EXITING') {
-                unit.bayProgress += dt * 2.4; // ~0.42s to pull out of station bay onto street
+                unit.bayProgress += dt * 2.4;
                 const bayPos = this.getLotGarageXY(unit.homeLot, { col: unit.homeCol, row: unit.homeRow });
-                const roadCenter = {
-                    x: this.world.offsetX + unit.homeCol * this.world.cellSize + this.world.cellSize / 2,
-                    y: this.world.offsetY + unit.homeRow * this.world.cellSize + this.world.cellSize / 2
-                };
                 this.updateHeadingFromStep(
                     unit,
                     Math.round((bayPos.x - this.world.offsetX) / this.world.cellSize),
@@ -536,7 +546,7 @@ class VehicleManager {
             }
 
             if (unit.bayMode === 'ENTERING') {
-                unit.bayProgress += dt * 2.4; // ~0.42s to pull into station bay from street
+                unit.bayProgress += dt * 2.4;
                 const bayPos = this.getLotGarageXY(unit.homeLot, { col: unit.homeCol, row: unit.homeRow });
                 this.updateHeadingFromStep(
                     unit,
@@ -550,6 +560,7 @@ class VehicleManager {
                     unit.bayMode = null;
                     unit.bayProgress = 0;
                     unit.inGarage = true;
+                    unit.towedSpriteKey = null; // Wreck delivered inside Mechanic Shop!
                     unit.status = UNIT_STATUS.IDLE_AT_BASE;
                     unit.sirenActive = false;
                     this.syncHUD();
@@ -574,8 +585,7 @@ class VehicleManager {
                         this.updateHeadingFromStep(unit, unit.col, unit.row, unit.path[0].col, unit.path[0].row);
                     } else {
                         unit.progress = 0;
-                        if (unit.status === UNIT_STATUS.RETURNING) {
-                            // Pull into the station garage!
+                        if (unit.status === UNIT_STATUS.RETURNING || unit.status === UNIT_STATUS.TOWING) {
                             unit.bayMode = 'ENTERING';
                             unit.bayProgress = 0;
                             unit.sirenActive = false;
@@ -592,7 +602,7 @@ class VehicleManager {
             }
         }
 
-        // 2. Update Seeded Civilian Traffic (Traffic Lights, Stop Signs & Spacing)
+        // 2. Update Seeded Civilian Traffic
         for (const civ of this.civilians) {
             if (civ.involvedInCrash) continue;
             if (civ.crashCooldown > 0) civ.crashCooldown -= dt;
@@ -611,13 +621,11 @@ class VehicleManager {
                 const nextStep = civ.path[0];
                 this.updateHeadingFromStep(civ, civ.col, civ.row, nextStep.col, nextStep.row);
 
-                // If nextStep is blocked by an active crash, reroute or wait
                 if (this.isCellBlockedByCrash(nextStep.col, nextStep.row) && civ.progress >= 0.45) {
                     this.assignNextCivilianRoute(civ);
                     continue;
                 }
 
-                // Check Traffic Lights (4WAY) & Stop Signs (3WAY) before entering nextStep
                 const nextRoadType = this.world.grid[nextStep.row][nextStep.col].roadType;
                 const nextKey = `${nextStep.col},${nextStep.row}`;
 
@@ -627,9 +635,9 @@ class VehicleManager {
                         const movingNS = nextStep.row !== civ.row;
                         const signal = movingNS ? tl.NS : tl.EW;
 
-                        // Law-abiding civilians stop on RED or YELLOW; reckless drivers sometimes blow through!
                         if (signal !== 'GREEN') {
-                            const blowsLight = civ.isReckless && (signal === 'YELLOW' || (this.world.simTime % 5 < 2.2));
+                            // Only run a yellow/red light if globalCrashCooldown <= 0 AND this is the reckless car
+                            const blowsLight = civ.isReckless && this.globalCrashCooldown <= 0 && signal === 'YELLOW';
                             if (!blowsLight) {
                                 civ.progress = Math.min(civ.progress, 0.52);
                                 continue;
@@ -638,8 +646,8 @@ class VehicleManager {
                     } else if (nextRoadType && nextRoadType.startsWith('3WAY')) {
                         if (civ.stoppedAtTileKey !== nextKey) {
                             civ.stoppedAtTileKey = nextKey;
-                            if (!civ.isReckless) {
-                                civ.stopSignWait = 0.55; // Stop at STOP sign
+                            if (!(civ.isReckless && this.globalCrashCooldown <= 0)) {
+                                civ.stopSignWait = 0.55;
                                 civ.progress = Math.min(civ.progress, 0.52);
                                 continue;
                             }
@@ -647,7 +655,6 @@ class VehicleManager {
                     }
                 }
 
-                // Same-lane following distance so cars queue cleanly behind stopped cars at red lights
                 const blockedAhead = this.civilians.some(other =>
                     other !== civ &&
                     Math.abs(other.headingRad - civ.headingRad) < 0.1 &&
@@ -680,21 +687,21 @@ class VehicleManager {
             }
         }
 
-        // 3. Detect Vehicle Collisions & Update Active Wreckage Recovery
+        // 3. Detect Rare Intersection Collisions & Update Active Wreckage Recovery
         this.checkVehicleCollisions();
         this.updateCollisions(dt);
     }
 
     // ========================================================
-    // COLLISION DETECTION & WRECKAGE RESOLUTION
+    // RARE INTERSECTION COLLISIONS & TOW WRECKER HAULING
     // ========================================================
     checkVehicleCollisions() {
-        if (this.collisions.length >= 3) return; // Cap simultaneous wrecks so map stays playable
+        // Strict cap: max 1 active random crash, and only when globalCrashCooldown <= 0
+        if (this.collisions.length >= 1 || this.globalCrashCooldown > 0) return;
 
         const s = this.world.cellSize;
-        const crashDist = s * 0.38;
+        const crashDist = s * 0.34;
 
-        // Check civilian vs civilian perpendicular intersection crashes
         for (let i = 0; i < this.civilians.length; i++) {
             const a = this.civilians[i];
             if (a.involvedInCrash || a.crashCooldown > 0) continue;
@@ -703,8 +710,8 @@ class VehicleManager {
             for (let j = i + 1; j < this.civilians.length; j++) {
                 const b = this.civilians[j];
                 if (b.involvedInCrash || b.crashCooldown > 0) continue;
+                if (!a.isReckless && !b.isReckless) continue; // Only reckless car triggers random crash
 
-                // Only collide if traveling on intersecting/perpendicular headings
                 const angleDiff = Math.abs(Math.sin(a.headingRad - b.headingRad));
                 if (angleDiff < 0.7) continue;
 
@@ -715,11 +722,24 @@ class VehicleManager {
                     const crashCol = Math.round(((posA.centerX + posB.centerX) / 2 - this.world.offsetX - s / 2) / s);
                     const crashRow = Math.round(((posA.centerY + posB.centerY) / 2 - this.world.offsetY - s / 2) / s);
                     if (this.world.isRoadOrBridge(crashCol, crashRow) && !this.isCellBlockedByCrash(crashCol, crashRow)) {
-                        this.triggerCollision(a, b, crashCol, crashRow);
-                        break;
+                        const rType = this.world.grid[crashRow][crashCol].roadType;
+                        // Only trigger inside actual 4-way or 3-way intersections
+                        if (rType === '4WAY' || (rType && rType.startsWith('3WAY'))) {
+                            this.triggerCollision(a, b, crashCol, crashRow);
+                            return;
+                        }
                     }
                 }
             }
+        }
+    }
+
+    // Can also be called by Phase 4 Scheduled Timeline Pileup Incident!
+    triggerScheduledCollisionAt(col, row) {
+        if (this.isCellBlockedByCrash(col, row) || this.civilians.length < 2) return;
+        const freeCivs = this.civilians.filter(c => !c.involvedInCrash);
+        if (freeCivs.length >= 2) {
+            this.triggerCollision(freeCivs[0], freeCivs[1], col, row);
         }
     }
 
@@ -733,6 +753,7 @@ class VehicleManager {
         civA.progress = 0;
         civB.progress = 0;
 
+        this.globalCrashCooldown = 60.0; // 60 seconds before another random accident can occur
         this.totalDamage += 2500;
         this.totalCasualties += 1;
         this.updateDamageHUD();
@@ -748,7 +769,7 @@ class VehicleManager {
             civA,
             civB,
             clearProgress: 0,
-            clearDuration: 3.5
+            clearDuration: 3.0
         });
     }
 
@@ -756,7 +777,7 @@ class VehicleManager {
         for (let i = this.collisions.length - 1; i >= 0; i--) {
             const crash = this.collisions[i];
 
-            // Check if any active responder is on or orthogonally adjacent to the crash tile
+            // Check if TOW 5 (or any responder) is on or adjacent to the crash tile
             const responderOnScene = this.responders.find(u =>
                 !u.inGarage &&
                 !u.bayMode &&
@@ -767,20 +788,34 @@ class VehicleManager {
             if (responderOnScene) {
                 responderOnScene.status = UNIT_STATUS.ON_SCENE;
                 responderOnScene.sirenActive = true;
-                crash.clearProgress += dt / crash.clearDuration;
+                // Tow Truck hooks up wrecks fastest (1.4x speed)
+                const rate = responderOnScene.id === 'unit_tow' ? 1.4 : 1.0;
+                crash.clearProgress += (dt * rate) / crash.clearDuration;
 
                 if (crash.clearProgress >= 1.0) {
-                    // Wreck cleared! Release both civilians and reopen road
                     crash.civA.involvedInCrash = false;
                     crash.civB.involvedInCrash = false;
-                    crash.civA.crashCooldown = 6.0;
-                    crash.civB.crashCooldown = 6.0;
+                    crash.civA.crashCooldown = 30.0;
+                    crash.civB.crashCooldown = 30.0;
                     this.assignNextCivilianRoute(crash.civA);
                     this.assignNextCivilianRoute(crash.civB);
 
-                    if (this.totalCasualties > 0 && (responderOnScene.id === 'unit_medic' || responderOnScene.id === 'unit_fire')) {
+                    if (this.totalCasualties > 0) {
                         this.totalCasualties = Math.max(0, this.totalCasualties - 1);
                         this.updateDamageHUD();
+                    }
+
+                    // If TOW 5 (or if TOW 5 is available, hook the wrecked car onto TOW 5 and haul it back to the Mechanic Shop!)
+                    const towUnit = responderOnScene.id === 'unit_tow'
+                        ? responderOnScene
+                        : this.responders.find(u => u.id === 'unit_tow');
+
+                    if (responderOnScene.id === 'unit_tow') {
+                        responderOnScene.towedSpriteKey = crash.civA.spriteKey;
+                        this.returnUnitToBase(responderOnScene, true);
+                    } else if (towUnit && !towUnit.inGarage && Math.abs(towUnit.col - crash.col) + Math.abs(towUnit.row - crash.row) <= 2) {
+                        towUnit.towedSpriteKey = crash.civA.spriteKey;
+                        this.returnUnitToBase(towUnit, true);
                     }
 
                     if (window.soundManager) window.soundManager.playResolved();
@@ -810,7 +845,6 @@ class VehicleManager {
     getVehicleWorldXY(v, isResponder = false) {
         const s = this.world.cellSize;
 
-        // Handle smooth emergence/return along station driveway apron
         if (isResponder && v.bayMode) {
             const bayPos = this.getLotGarageXY(v.homeLot, { col: v.homeCol, row: v.homeRow });
             const roadX = this.world.offsetX + v.homeCol * s + s / 2 + Math.cos(v.headingRad) * (s * 0.22);
@@ -938,13 +972,38 @@ class VehicleManager {
         // 3. Render Active Traffic Collisions & Wreckage
         this.renderCollisions(ctx, s, nowMs, civDrawSize);
 
-        // 4. Render Active Emergency Responder Units (Hidden when inGarage === true!)
+        // 4. Render Active Emergency Responder Units (plus Towed Wreck behind TOW 5!)
         const respDrawSize = Math.floor(s * 1.24);
         for (const unit of this.responders) {
             if (unit.inGarage) continue;
 
             const pos = this.getVehicleWorldXY(unit, true);
             const isSelected = this.selectedUnit && this.selectedUnit.id === unit.id;
+
+            // If TOW 5 is towing a wrecked vehicle back to the Mechanic Shop, render the towed car behind it!
+            if (unit.towedSpriteKey) {
+                const towedSprite = this.sprites[unit.towedSpriteKey];
+                // Backward direction vector along unit.headingRad (since 0 is North (0, -1), backward is (-sin, cos))
+                const backX = -Math.sin(unit.headingRad);
+                const backY = Math.cos(unit.headingRad);
+                const towX = pos.x + backX * (s * 0.56);
+                const towY = pos.y + backY * (s * 0.56);
+
+                ctx.save();
+                ctx.strokeStyle = '#facc15';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+                ctx.lineTo(towX, towY);
+                ctx.stroke();
+
+                if (towedSprite && towedSprite.complete) {
+                    ctx.translate(towX, towY);
+                    ctx.rotate(unit.headingRad);
+                    ctx.drawImage(towedSprite, -civDrawSize / 2, -civDrawSize / 2, civDrawSize, civDrawSize);
+                }
+                ctx.restore();
+            }
 
             if (isSelected) {
                 ctx.save();
@@ -984,7 +1043,6 @@ class VehicleManager {
             const cx = this.world.offsetX + crash.col * s + s / 2;
             const cy = this.world.offsetY + crash.row * s + s / 2;
 
-            // Flashing red/amber hazard ring on the road
             const pulse = 0.4 + 0.3 * Math.sin(nowMs / 100);
             ctx.save();
             ctx.fillStyle = `rgba(239, 68, 68, ${pulse})`;
@@ -995,7 +1053,6 @@ class VehicleManager {
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Draw the two crumpled/angled vehicles in the wreck
             const spriteA = this.sprites[crash.civA.spriteKey];
             const spriteB = this.sprites[crash.civB.spriteKey];
 
@@ -1014,7 +1071,6 @@ class VehicleManager {
                 ctx.restore();
             }
 
-            // Animated fire sparks & rising smoke plume
             const smokeOffset = (nowMs / 25) % 16;
             ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
             ctx.beginPath();
@@ -1026,28 +1082,27 @@ class VehicleManager {
             ctx.arc(cx, cy, 5, 0, Math.PI * 2);
             ctx.fill();
 
-            // Alert Label or Clearing Progress Bar above crash
             if (crash.clearProgress > 0) {
                 const bw = 64;
                 const bh = 8;
                 ctx.fillStyle = '#090d16';
                 ctx.fillRect(cx - bw / 2, cy - s * 0.56, bw, bh);
-                ctx.fillStyle = '#10b981';
+                ctx.fillStyle = '#f97316';
                 ctx.fillRect(cx - bw / 2 + 1, cy - s * 0.56 + 1, Math.floor((bw - 2) * crash.clearProgress), bh - 2);
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(cx - bw / 2, cy - s * 0.56, bw, bh);
             } else {
-                const lbl = '💥 CRASH!';
-                const bw = 58;
+                const lbl = '💥 SEND TOW [5]';
+                const bw = 78;
                 ctx.fillStyle = 'rgba(127, 29, 29, 0.95)';
                 ctx.fillRect(cx - bw / 2, cy - s * 0.58, bw, 14);
                 ctx.strokeStyle = '#facc15';
                 ctx.lineWidth = 1.5;
                 ctx.strokeRect(cx - bw / 2, cy - s * 0.58, bw, 14);
                 ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 9px monospace';
-                ctx.fillText(lbl, cx - bw / 2 + 5, cy - s * 0.58 + 10);
+                ctx.font = 'bold 8px monospace';
+                ctx.fillText(lbl, cx - bw / 2 + 4, cy - s * 0.58 + 10);
             }
             ctx.restore();
         }
@@ -1086,10 +1141,12 @@ class VehicleManager {
             card.style.borderColor = isSelected ? unit.color : 'var(--border-color)';
 
             const destName = unit.inGarage
-                ? 'Parked Inside Station Bay'
-                : (unit.targetLot
-                    ? unit.targetLot.name
-                    : `Grid (${unit.targetCol}, ${unit.targetRow})`);
+                ? 'In Station Bay'
+                : (unit.status === UNIT_STATUS.TOWING
+                    ? 'Hauling to Tow Shop'
+                    : (unit.targetLot
+                        ? unit.targetLot.name
+                        : `Grid (${unit.targetCol}, ${unit.targetRow})`));
 
             card.innerHTML = `
                 <div class="unit-card-top">
@@ -1099,7 +1156,7 @@ class VehicleManager {
                 </div>
                 <div class="unit-card-dest">${destName}</div>
                 <div class="unit-card-actions">
-                    <button class="unit-btn-select" data-unit="${unit.id}">${isSelected ? '🎯 SELECTED (CLICK MAP)' : 'SELECT UNIT'}</button>
+                    <button class="unit-btn-select" data-unit="${unit.id}">${isSelected ? '🎯 SELECTED' : 'SELECT'}</button>
                     <button class="unit-btn-rtb" data-rtb="${unit.id}" title="Return Inside Station Bay" ${unit.inGarage ? 'disabled style="opacity:0.4"' : ''}>↩ BAY</button>
                 </div>
             `;
