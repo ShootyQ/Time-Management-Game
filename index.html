@@ -182,26 +182,29 @@
             <!-- Game HUD -->
             <div class="game-hud">
                 <div class="hud-left">
-                    <button class="btn" id="btn-pause-shift" style="padding: 6px 12px; font-size: 12px;">⏸ PAUSE</button>
-                    <button class="btn" id="btn-speed-toggle" style="padding: 6px 10px; font-size: 12px; border-color: var(--accent-amber);">⚡ 1x</button>
+                    <button class="btn hud-btn" id="btn-pause-shift">⏸ PAUSE</button>
+                    <button class="btn hud-btn" id="btn-speed-toggle" style="border-color: var(--accent-amber);">⚡ 1x</button>
                     <div class="hud-clock" id="hud-clock">08:00:00 AM</div>
                     <div class="hud-badges">
                         <div class="hud-badge nudge">⏳ NUDGE TOKENS: <strong id="hud-tokens">3/3</strong></div>
                         <div class="hud-badge">LOOP: <strong id="hud-loop">#1</strong></div>
                         <div class="hud-badge">SEED: <strong id="hud-seed">#1042</strong> (<span id="hud-topology" style="color: var(--accent-cyan);">MAP</span>)</div>
-                        <button class="btn" id="btn-hud-new-seed" style="padding: 5px 10px; font-size: 11px; border-color: var(--accent-cyan);">🎲 NEW SEED</button>
+                        <button class="btn hud-btn" id="btn-hud-new-seed" style="border-color: var(--accent-cyan);">🎲 NEW SEED</button>
                     </div>
                 </div>
 
                 <div class="hud-badges">
+                    <div class="hud-badge">⛓️ PREVENTED: <strong id="hud-prevented" style="color: var(--accent-amber);">0</strong></div>
                     <div class="hud-badge">🚒 CASUALTIES: <strong id="hud-casualties" style="color: var(--accent-green);">0</strong></div>
                     <div class="hud-badge">🔥 DAMAGE: <strong id="hud-damage" style="color: var(--accent-cyan);">$0</strong></div>
-                    <button class="btn" id="btn-exit-to-menu" style="padding: 6px 12px; font-size: 12px;">EXIT TO MENU</button>
+                    <button class="btn hud-btn" id="btn-end-shift-now" style="border-color: var(--accent-green);">🏁 EVALUATE</button>
+                    <button class="btn hud-btn" id="btn-exit-to-menu">EXIT</button>
                 </div>
             </div>
 
             <!-- Map Canvas Viewport (Phase 2 Canvas) -->
             <div class="map-view-container">
+                <div class="domino-alert-banner hidden" id="domino-alert-banner"></div>
                 <canvas id="map-canvas" width="800" height="480"></canvas>
             </div>
 
@@ -214,6 +217,57 @@
             </div>
         </div>
     </section>
+
+    <!-- ==========================================
+         SHIFT EVALUATION & TIME-LOOP REPORT MODAL
+         ========================================== -->
+    <div class="modal-backdrop hidden" id="shift-summary-modal">
+        <div class="modal-content" style="max-width: 620px;">
+            <div class="modal-header">
+                <h2 id="summary-modal-title">SHIFT EVALUATION // 09:00 AM REPORT</h2>
+            </div>
+
+            <div class="summary-rank-row">
+                <div class="summary-rank-badge" id="summary-rank-badge">S</div>
+                <div class="summary-rank-info">
+                    <div class="summary-rank-verdict" id="summary-rank-verdict">FLAWLESS TIME CHOREOGRAPHY</div>
+                    <div class="summary-rank-sub" id="summary-rank-sub">District #1042 • Loop #1 Completed</div>
+                </div>
+            </div>
+
+            <div class="summary-stats-grid">
+                <div class="summary-stat-box">
+                    <div class="summary-stat-label">INCIDENTS RESOLVED</div>
+                    <div class="summary-stat-value" id="summary-resolved" style="color: var(--accent-green);">7 / 7</div>
+                </div>
+                <div class="summary-stat-box">
+                    <div class="summary-stat-label">DOMINOES PREVENTED</div>
+                    <div class="summary-stat-value" id="summary-dominoes" style="color: var(--accent-amber);">3</div>
+                </div>
+                <div class="summary-stat-box">
+                    <div class="summary-stat-label">TOTAL CASUALTIES</div>
+                    <div class="summary-stat-value" id="summary-casualties" style="color: var(--accent-green);">0</div>
+                </div>
+                <div class="summary-stat-box">
+                    <div class="summary-stat-label">PROPERTY DAMAGE</div>
+                    <div class="summary-stat-value" id="summary-damage" style="color: var(--accent-cyan);">$0</div>
+                </div>
+            </div>
+
+            <div class="summary-intel-note" id="summary-intel-note">
+                📡 <strong>TIME-LOOP RECON MEMORY ACTIVE:</strong> Replaying this loop preserves your knowledge of all scheduled emergencies and Domino Cascade chains so you can pre-position responders and spend Nudge Tokens before disaster strikes!
+            </div>
+
+            <div class="summary-actions">
+                <button class="btn btn-primary" id="btn-replay-loop" style="flex: 1;">
+                    🔁 REPLAY LOOP (CHOREOGRAPH BETTER)
+                </button>
+                <button class="btn" id="btn-next-district" style="flex: 1; border-color: var(--accent-cyan);">
+                    🎲 NEXT DISTRICT (NEW SEED)
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Game Scripts -->
     <script src="src/audio.js"></script>

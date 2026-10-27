@@ -32,6 +32,19 @@ class GameApp {
         this.gameScreen = document.getElementById('game-screen');
         this.settingsModal = document.getElementById('settings-modal');
         this.briefingModal = document.getElementById('briefing-modal');
+        this.shiftSummaryModal = document.getElementById('shift-summary-modal');
+
+        // Summary Modal Elements
+        this.summaryRankBadge = document.getElementById('summary-rank-badge');
+        this.summaryRankVerdict = document.getElementById('summary-rank-verdict');
+        this.summaryRankSub = document.getElementById('summary-rank-sub');
+        this.summaryResolved = document.getElementById('summary-resolved');
+        this.summaryDominoes = document.getElementById('summary-dominoes');
+        this.summaryCasualties = document.getElementById('summary-casualties');
+        this.summaryDamage = document.getElementById('summary-damage');
+        this.btnReplayLoop = document.getElementById('btn-replay-loop');
+        this.btnNextDistrict = document.getElementById('btn-next-district');
+        this.btnEndShiftNow = document.getElementById('btn-end-shift-now');
 
         // Inputs & Labels
         this.seedInput = document.getElementById('seed-input');
@@ -103,13 +116,21 @@ class GameApp {
         const rollNewSeed = () => {
             window.soundManager.playClick();
             this.districtSeed = Math.floor(1000 + Math.random() * 9000);
+            this.currentLoop = 1;
+            this.nudgeTokens = 3;
             this.seedInput.value = this.districtSeed;
             this.tickerDistrict.textContent = `#${this.districtSeed}`;
             if (this.hudSeed) this.hudSeed.textContent = `#${this.districtSeed}`;
+            if (this.hudLoop) this.hudLoop.textContent = `#${this.currentLoop}`;
+            if (this.hudTokens) this.hudTokens.textContent = `${this.nudgeTokens}/3`;
             if (this.world) {
                 this.world.generate(this.districtSeed);
                 if (this.hudTopology) this.hudTopology.textContent = this.world.topologyName;
                 this.world.render();
+            }
+            if (this.currentState === STATE.PLAYING) {
+                this.inGameSeconds = 8 * 3600;
+                this.updateClockDisplay();
             }
         };
 
@@ -183,6 +204,38 @@ class GameApp {
             window.soundManager.playCancel();
             this.exitToMenu();
         });
+
+        // Evaluate / End Shift Early Button
+        if (this.btnEndShiftNow) {
+            this.btnEndShiftNow.addEventListener('click', () => {
+                window.soundManager.playSelect();
+                this.endShift();
+            });
+        }
+
+        // Shift Evaluation Modal Buttons
+        if (this.btnReplayLoop) {
+            this.btnReplayLoop.addEventListener('click', () => {
+                window.soundManager.playSirenBlip();
+                if (this.shiftSummaryModal) this.shiftSummaryModal.classList.add('hidden');
+                this.currentLoop += 1;
+                this.nudgeTokens = 3;
+                this.startShift();
+            });
+        }
+
+        if (this.btnNextDistrict) {
+            this.btnNextDistrict.addEventListener('click', () => {
+                window.soundManager.playSirenBlip();
+                if (this.shiftSummaryModal) this.shiftSummaryModal.classList.add('hidden');
+                this.districtSeed = Math.floor(1000 + Math.random() * 9000);
+                this.seedInput.value = this.districtSeed;
+                this.tickerDistrict.textContent = `#${this.districtSeed}`;
+                this.currentLoop = 1;
+                this.nudgeTokens = 3;
+                this.startShift();
+            });
+        }
 
         // In-game Pause
         this.btnPauseShift.addEventListener('click', () => {
@@ -296,11 +349,76 @@ class GameApp {
     }
 
     endShift() {
-        clearInterval(this.clockTimer);
+        if (this.clockTimer) clearInterval(this.clockTimer);
+        this.isPaused = true;
         window.soundManager.playSelect();
-        alert(`SHIFT COMPLETED! (09:00 AM)\nLoop #${this.currentLoop} evaluated.\nPreparing Loop #${this.currentLoop + 1}...`);
-        this.currentLoop += 1;
-        this.startShift();
+
+        const tm = window.timelineManager;
+        const vm = this.world ? this.world.vehicleManager : null;
+
+        const totalInc = tm ? tm.incidents.length : 7;
+        const resolvedInc = tm ? tm.incidents.filter(i => i.state === 'RESOLVED').length : 0;
+        const failedInc = tm ? tm.incidents.filter(i => i.state === 'FAILED').length : 0;
+        const prevented = tm ? tm.dominoesPrevented : 0;
+        const casualties = vm ? vm.totalCasualties : 0;
+        const damage = vm ? vm.totalDamage : 0;
+
+        // Calculate Shift Grade Rank (S / A / B / C / F)
+        let rank = 'B';
+        let verdict = 'SOLID SHIFT PERFORMANCE';
+        let badgeColor = '#38bdf8';
+        let badgeBg = '#0c4a6e';
+
+        if (casualties === 0 && failedInc === 0 && resolvedInc >= Math.min(5, totalInc) && damage === 0) {
+            rank = 'S';
+            verdict = 'FLAWLESS TIME-LOOP CHOREOGRAPHY!';
+            badgeColor = '#10b981';
+            badgeBg = '#064e3b';
+        } else if (casualties === 0 && failedInc <= 1 && resolvedInc >= 3) {
+            rank = 'A';
+            verdict = 'EXCELLENT EMERGENCY RESPONSE';
+            badgeColor = '#38bdf8';
+            badgeBg = '#0c4a6e';
+        } else if (casualties <= 1 && failedInc <= 2) {
+            rank = 'B';
+            verdict = 'STABLE DISTRICT CONTAINMENT';
+            badgeColor = '#f59e0b';
+            badgeBg = '#78350f';
+        } else if (casualties <= 3) {
+            rank = 'C';
+            verdict = 'HEAVY COLLATERAL DAMAGE — REPLAY LOOP!';
+            badgeColor = '#f97316';
+            badgeBg = '#7c2d12';
+        } else {
+            rank = 'F';
+            verdict = 'CATASTROPHIC CASCADE — REWIND TIME!';
+            badgeColor = '#ef4444';
+            badgeBg = '#7f1d1d';
+        }
+
+        if (this.summaryRankBadge) {
+            this.summaryRankBadge.textContent = rank;
+            this.summaryRankBadge.style.borderColor = badgeColor;
+            this.summaryRankBadge.style.backgroundColor = badgeBg;
+        }
+        if (this.summaryRankVerdict) this.summaryRankVerdict.textContent = verdict;
+        if (this.summaryRankSub) {
+            this.summaryRankSub.textContent = `District #${this.districtSeed} (${this.world ? this.world.topologyName : 'MAP'}) • Loop #${this.currentLoop} Evaluated`;
+        }
+        if (this.summaryResolved) this.summaryResolved.textContent = `${resolvedInc} / ${totalInc}`;
+        if (this.summaryDominoes) this.summaryDominoes.textContent = String(prevented);
+        if (this.summaryCasualties) {
+            this.summaryCasualties.textContent = String(casualties);
+            this.summaryCasualties.style.color = casualties === 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+        }
+        if (this.summaryDamage) {
+            this.summaryDamage.textContent = `$${damage.toLocaleString()}`;
+            this.summaryDamage.style.color = damage === 0 ? 'var(--accent-cyan)' : 'var(--accent-red)';
+        }
+
+        if (this.shiftSummaryModal) {
+            this.shiftSummaryModal.classList.remove('hidden');
+        }
     }
 
     // Canvas Initializer & Rendering

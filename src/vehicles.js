@@ -17,6 +17,7 @@ const UNIT_STATUS = {
     EN_ROUTE: 'EN ROUTE',
     ON_SCENE: 'ON SCENE',
     TOWING: 'TOWING WRECK',
+    ER_TRANSPORT: 'ER TRANSPORT',
     RETURNING: 'RETURNING'
 };
 
@@ -437,12 +438,12 @@ class VehicleManager {
         return this.dispatchUnit(this.selectedUnit, col, row, null);
     }
 
-    returnUnitToBase(unit, isTowing = false) {
+    returnUnitToBase(unit, isTowing = false, isErTransport = false) {
         if (!unit || unit.inGarage) return false;
         const ok = this.dispatchUnit(unit, unit.homeCol, unit.homeRow, unit.homeLot, true);
         if (ok) {
-            unit.status = isTowing ? UNIT_STATUS.TOWING : UNIT_STATUS.RETURNING;
-            unit.sirenActive = isTowing;
+            unit.status = isTowing ? UNIT_STATUS.TOWING : (isErTransport ? UNIT_STATUS.ER_TRANSPORT : UNIT_STATUS.RETURNING);
+            unit.sirenActive = isTowing || isErTransport;
             this.syncHUD();
         }
         return ok;
@@ -1083,26 +1084,27 @@ class VehicleManager {
             ctx.fill();
 
             if (crash.clearProgress > 0) {
-                const bw = 64;
-                const bh = 8;
+                const bw = 82;
+                const bh = 10;
                 ctx.fillStyle = '#090d16';
-                ctx.fillRect(cx - bw / 2, cy - s * 0.56, bw, bh);
+                ctx.fillRect(cx - bw / 2, cy - s * 0.58, bw, bh);
                 ctx.fillStyle = '#f97316';
-                ctx.fillRect(cx - bw / 2 + 1, cy - s * 0.56 + 1, Math.floor((bw - 2) * crash.clearProgress), bh - 2);
+                ctx.fillRect(cx - bw / 2 + 1, cy - s * 0.58 + 1, Math.floor((bw - 2) * crash.clearProgress), bh - 2);
                 ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(cx - bw / 2, cy - s * 0.56, bw, bh);
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(cx - bw / 2, cy - s * 0.58, bw, bh);
             } else {
                 const lbl = '💥 SEND TOW [5]';
-                const bw = 78;
-                ctx.fillStyle = 'rgba(127, 29, 29, 0.95)';
-                ctx.fillRect(cx - bw / 2, cy - s * 0.58, bw, 14);
+                ctx.font = 'bold 12px monospace';
+                const bw = Math.ceil(ctx.measureText(lbl).width + 16);
+                const bh = 20;
+                ctx.fillStyle = 'rgba(127, 29, 29, 0.96)';
+                ctx.fillRect(cx - bw / 2, cy - s * 0.62, bw, bh);
                 ctx.strokeStyle = '#facc15';
-                ctx.lineWidth = 1.5;
-                ctx.strokeRect(cx - bw / 2, cy - s * 0.58, bw, 14);
+                ctx.lineWidth = 2;
+                ctx.strokeRect(cx - bw / 2, cy - s * 0.62, bw, bh);
                 ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 8px monospace';
-                ctx.fillText(lbl, cx - bw / 2 + 4, cy - s * 0.58 + 10);
+                ctx.fillText(lbl, cx - bw / 2 + 6, cy - s * 0.62 + 14);
             }
             ctx.restore();
         }
@@ -1110,20 +1112,20 @@ class VehicleManager {
 
     renderUnitCallsign(ctx, cx, cy, unit, isSelected) {
         const label = unit.callsign;
-        const bw = label.length * 5.5 + 10;
-        const bh = 13;
+        ctx.font = 'bold 12px monospace';
+        const bw = Math.ceil(ctx.measureText(label).width + 14);
+        const bh = 19;
         const bx = Math.floor(cx - bw / 2);
         const by = Math.floor(cy - bh);
 
-        ctx.fillStyle = isSelected ? unit.color : 'rgba(15, 23, 42, 0.9)';
+        ctx.fillStyle = isSelected ? unit.color : 'rgba(11, 17, 32, 0.94)';
         ctx.fillRect(bx, by, bw, bh);
         ctx.strokeStyle = isSelected ? '#ffffff' : unit.color;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.5;
         ctx.strokeRect(bx, by, bw, bh);
 
-        ctx.fillStyle = isSelected ? '#090d16' : '#f8fafc';
-        ctx.font = 'bold 8px monospace';
-        ctx.fillText(label, bx + 4, by + 9.5);
+        ctx.fillStyle = isSelected ? '#090d16' : '#ffffff';
+        ctx.fillText(label, bx + 6, by + 14);
     }
 
     // ========================================================
@@ -1144,9 +1146,11 @@ class VehicleManager {
                 ? 'In Station Bay'
                 : (unit.status === UNIT_STATUS.TOWING
                     ? 'Hauling to Tow Shop'
-                    : (unit.targetLot
-                        ? unit.targetLot.name
-                        : `Grid (${unit.targetCol}, ${unit.targetRow})`));
+                    : (unit.status === UNIT_STATUS.ER_TRANSPORT
+                        ? 'Patient -> County ER'
+                        : (unit.targetLot
+                            ? unit.targetLot.name
+                            : `Grid (${unit.targetCol}, ${unit.targetRow})`)));
 
             card.innerHTML = `
                 <div class="unit-card-top">

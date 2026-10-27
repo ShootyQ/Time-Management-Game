@@ -81,14 +81,14 @@ class World {
     resize() {
         const container = this.canvas.parentElement;
         const w = container && container.clientWidth ? container.clientWidth : window.innerWidth;
-        const h = container && container.clientHeight ? container.clientHeight : (window.innerHeight - 200);
+        const h = container && container.clientHeight ? container.clientHeight : (window.innerHeight - 280);
 
         this.canvas.width = Math.floor(w);
         this.canvas.height = Math.floor(h);
 
         const cellW = Math.floor(w / this.cols);
         const cellH = Math.floor(h / this.rows);
-        this.cellSize = Math.max(38, Math.min(cellW, cellH));
+        this.cellSize = Math.max(32, Math.min(cellW, cellH));
 
         this.offsetX = Math.floor((this.canvas.width - this.cols * this.cellSize) / 2);
         this.offsetY = Math.floor((this.canvas.height - this.rows * this.cellSize) / 2);
@@ -1601,15 +1601,17 @@ class World {
 
     renderBadge(bx, by, label, badgeColor) {
         const ctx = this.ctx;
-        const bw = label.length * 6 + 14;
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-        ctx.fillRect(bx, by, bw, 16);
+        ctx.font = 'bold 13px monospace';
+        const textW = ctx.measureText(label).width;
+        const bw = Math.ceil(textW + 14);
+        const bh = 22;
+        ctx.fillStyle = 'rgba(11, 17, 32, 0.94)';
+        ctx.fillRect(bx, by, bw, bh);
         ctx.strokeStyle = badgeColor;
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(bx, by, bw, 16);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 9px monospace';
-        ctx.fillText(label, bx + 4, by + 11);
+        ctx.fillText(label, bx + 6, by + 15);
     }
 
     renderOverlays() {
@@ -1623,8 +1625,8 @@ class World {
             const h = (lot.h || 1) * this.cellSize;
 
             ctx.strokeStyle = '#38bdf8';
-            ctx.lineWidth = 2;
-            const b = 8;
+            ctx.lineWidth = 2.5;
+            const b = 10;
             ctx.beginPath(); ctx.moveTo(x, y + b); ctx.lineTo(x, y); ctx.lineTo(x + b, y); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(x + w - b, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + b); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(x, y + h - b); ctx.lineTo(x, y + h); ctx.lineTo(x + b, y + h); ctx.stroke();
@@ -1636,32 +1638,32 @@ class World {
 
     renderTooltip(lot, lx, ly) {
         const ctx = this.ctx;
-        const pad = 10;
-        const tw = 250;
-        const th = 64;
+        const pad = 12;
+        const tw = 335;
+        const th = 84;
 
-        let tx = lx + (lot.w || 1) * this.cellSize + 8;
+        let tx = lx + (lot.w || 1) * this.cellSize + 10;
         let ty = ly;
-        if (tx + tw > this.canvas.width) tx = lx - tw - 8;
-        if (ty + th > this.canvas.height) ty = this.canvas.height - th - 8;
+        if (tx + tw > this.canvas.width) tx = lx - tw - 10;
+        if (ty + th > this.canvas.height) ty = this.canvas.height - th - 10;
 
-        ctx.fillStyle = 'rgba(11, 17, 32, 0.95)';
+        ctx.fillStyle = 'rgba(11, 17, 32, 0.96)';
         ctx.fillRect(tx, ty, tw, th);
         ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 2;
         ctx.strokeRect(tx, ty, tw, th);
 
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 12px monospace';
-        ctx.fillText(lot.name, tx + pad, ty + 18);
+        ctx.font = 'bold 15px monospace';
+        ctx.fillText(lot.name, tx + pad, ty + 24);
 
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '11px monospace';
-        ctx.fillText(`📍 ${lot.address}`, tx + pad, ty + 34);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = 'bold 13px monospace';
+        ctx.fillText(`📍 ${lot.address}`, tx + pad, ty + 46);
 
-        ctx.fillStyle = lot.hazard.includes('Dispatches') ? '#10b981' : '#f59e0b';
-        ctx.font = '10px monospace';
-        ctx.fillText(`⚠️ ${lot.hazard}`, tx + pad, ty + 50);
+        ctx.fillStyle = lot.hazard.includes('Dispatches') || lot.hazard.includes('Hauls') ? '#10b981' : '#f59e0b';
+        ctx.font = 'bold 13px monospace';
+        ctx.fillText(`⚠️ ${lot.hazard}`, tx + pad, ty + 68);
     }
 }
 
