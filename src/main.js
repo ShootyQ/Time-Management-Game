@@ -59,9 +59,23 @@ class GameApp {
         this.settingCrt = document.getElementById('setting-crt');
         this.settingSpeed = document.getElementById('setting-speed');
 
-        // Canvas
+        // Canvas & World
         this.canvas = document.getElementById('map-canvas');
         this.ctx = this.canvas.getContext('2d');
+        this.world = new World(this.canvas, this.districtSeed);
+
+        // Start continuous render loop for smooth hover effects and vehicle animation
+        this.startRenderLoop();
+    }
+
+    startRenderLoop() {
+        const loop = () => {
+            if (this.currentState === STATE.PLAYING && this.world) {
+                this.world.render();
+            }
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
     }
 
     initEventListeners() {
@@ -77,6 +91,7 @@ class GameApp {
             this.districtSeed = Math.floor(1000 + Math.random() * 9000);
             this.seedInput.value = this.districtSeed;
             this.tickerDistrict.textContent = `#${this.districtSeed}`;
+            if (this.world) this.world.generate(this.districtSeed);
         });
 
         this.seedInput.addEventListener('change', (e) => {
@@ -84,6 +99,7 @@ class GameApp {
             if (!isNaN(val)) {
                 this.districtSeed = val;
                 this.tickerDistrict.textContent = `#${this.districtSeed}`;
+                if (this.world) this.world.generate(this.districtSeed);
             }
         });
 
@@ -166,7 +182,7 @@ class GameApp {
         if (this.clockTimer) clearInterval(this.clockTimer);
         this.clockTimer = setInterval(() => this.tick(), 1000 / this.simSpeed);
 
-        this.renderMapScene();
+        if (this.world) this.world.render();
     }
 
     exitToMenu() {
@@ -206,83 +222,8 @@ class GameApp {
 
     // Canvas Initializer & Rendering
     initCanvasPreview() {
-        // Adjust canvas resolution
         this.canvas.width = 800;
         this.canvas.height = 480;
-        this.renderMapScene();
-    }
-
-    renderMapScene() {
-        const ctx = this.ctx;
-        const w = this.canvas.width;
-        const h = this.canvas.height;
-
-        // Dark grass background
-        ctx.fillStyle = '#14532d';
-        ctx.fillRect(0, 0, w, h);
-
-        // Grid lines (subtle)
-        ctx.strokeStyle = '#166534';
-        ctx.lineWidth = 1;
-        const gridSize = 48;
-        for (let x = 0; x < w; x += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, h);
-            ctx.stroke();
-        }
-        for (let y = 0; y < h; y += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(w, y);
-            ctx.stroke();
-        }
-
-        // Horizontal Main Street
-        ctx.fillStyle = '#27272a';
-        ctx.fillRect(0, 200, w, 80);
-        // White curb edges
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 202, w, 3);
-        ctx.fillRect(0, 275, w, 3);
-        // Yellow dashed center divider
-        ctx.fillStyle = '#eab308';
-        for (let x = 10; x < w; x += 36) {
-            ctx.fillRect(x, 238, 20, 4);
-        }
-
-        // Vertical Avenue Intersection
-        ctx.fillStyle = '#27272a';
-        ctx.fillRect(360, 0, 80, h);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(362, 0, 3, h);
-        ctx.fillRect(435, 0, 3, h);
-        ctx.fillStyle = '#eab308';
-        for (let y = 10; y < h; y += 36) {
-            ctx.fillRect(398, y, 4, 20);
-        }
-
-        // Draw crosswalk zebra lines
-        ctx.fillStyle = '#f8fafc';
-        for (let y = 208; y < 274; y += 12) {
-            ctx.fillRect(346, y, 10, 6);
-            ctx.fillRect(444, y, 10, 6);
-        }
-
-        // Informational overlay badge on canvas
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-        ctx.fillRect(20, 20, 310, 70);
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(20, 20, 310, 70);
-
-        ctx.fillStyle = '#38bdf8';
-        ctx.font = 'bold 13px monospace';
-        ctx.fillText('DISPATCH RADAR // DISTRICT #' + this.districtSeed, 32, 42);
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '11px monospace';
-        ctx.fillText('Road Graph & Lots Ready for Phase 2', 32, 60);
-        ctx.fillText('Click "EXIT TO MENU" to return', 32, 76);
     }
 }
 
